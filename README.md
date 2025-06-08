@@ -27,7 +27,7 @@ sudo dnf in meson ninja qt6-qtbase-devel openssl-devel opus-devel pipewire-devel
 Enter nix shell
 
 ```bash
-nix-shell -p meson ninja qt6.full cmake pkg-config openssl.dev libopus.dev pipewire.dev ffmpeg.dev nlohmann_json pipewire wireplumber
+nix-shell -p meson ninja qt6.full cmake pkg-config openssl.dev libopus.dev pipewire.dev ffmpeg.dev nlohmann_json pipewire
 ```
 
 Run with env variable
