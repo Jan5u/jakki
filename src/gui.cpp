@@ -1,6 +1,9 @@
 #include "gui.hpp"
+#include "qdebug.h"
 #include "ui_connect.h"
 #include "ui_main.h"
+#include "ui_textchannel.h"
+#include "ui_settings.h"
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow), audioManager(networkManager), networkManager(audioManager) {
     ui->setupUi(this);
@@ -17,6 +20,17 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     model->appendRow(channel);
     ui->treeView->setModel(model);
     ui->treeView->expandAll();
+
+    QWidget *textChannelTab = new QWidget;
+    Ui::TextChannelTab uiTextChannel;
+    uiTextChannel.setupUi(textChannelTab);
+    connect(uiTextChannel.sendButton, &QPushButton::clicked, this, &MainWindow::sendMessage);
+    ui->tabWidget->addTab(textChannelTab, "Text Channel");
+
+    QWidget *settingsTab = new QWidget;
+    Ui::SettingsTab uiSettings;
+    uiSettings.setupUi(settingsTab);
+    ui->tabWidget->addTab(settingsTab, "Settings");
 }
 
 MainWindow::~MainWindow() {
@@ -64,4 +78,8 @@ void MainWindow::showContextMenu(const QPoint &pos) {
     sliderAction->setDefaultWidget(volumeWidget);
     menu->addAction(sliderAction);
     menu->exec(ui->treeView->viewport()->mapToGlobal(pos));
+}
+
+void MainWindow::sendMessage() {
+    qDebug("sendMessage");
 }

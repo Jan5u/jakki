@@ -21,6 +21,6 @@ sources = files(
     'src/network.hpp',
 )
 
-sources += qt6.preprocess(ui_files : ['ui/main.ui', 'ui/connect.ui'])
+sources += qt6.preprocess(ui_files : ['ui/main.ui', 'ui/connect.ui', 'ui/textchannel.ui', 'ui/settings.ui'])
 
 executable('jakki', sources, dependencies : [qt6_dep, openssl_dep, opus_dep, pipewire_dep, libavcodec_dep, libavformat_dep, thread_dep, json_dep])

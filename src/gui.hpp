@@ -27,4 +27,5 @@ class MainWindow : public QMainWindow {
     void disconnect();
     void showConnectDialog();
     void showContextMenu(const QPoint &pos);
+    void sendMessage();
 };
