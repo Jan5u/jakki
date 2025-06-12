@@ -1,6 +1,9 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QStandardItemModel>
+#include <QWidgetAction>
+#include <QLabel>
 #include "network.hpp"
 #include "audio.hpp"
 
@@ -23,4 +26,5 @@ class MainWindow : public QMainWindow {
     void buttonclick();
     void disconnect();
     void showConnectDialog();
+    void showContextMenu(const QPoint &pos);
 };

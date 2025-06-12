@@ -1,5 +1,4 @@
 #include "audio.hpp"
-#include "opus_defines.h"
 
 Audio::Audio(Network& network) : networkManager(network) {
     memset(&pwdata, 0, sizeof(pwdata));
@@ -231,12 +230,14 @@ void Audio::initOpus() {
 
     // encoder
     encoder = opus_encoder_create(DEFAULT_RATE, DEFAULT_CHANNELS, OPUS_APPLICATION_VOIP, &error);
+    // encoder = opus_encoder_create(DEFAULT_RATE, DEFAULT_CHANNELS, OPUS_APPLICATION_AUDIO, &error);
     if (error != OPUS_OK) {
         std::cout << "Failed to create Opus encoder: " << opus_strerror(error) << "\n";
     }
     opus_encoder_ctl(encoder, OPUS_SET_BITRATE(64000));
     opus_encoder_ctl(encoder, OPUS_SET_COMPLEXITY(10));
     opus_encoder_ctl(encoder, OPUS_SET_SIGNAL(OPUS_SIGNAL_MUSIC));
+    // opus_encoder_ctl(encoder, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
     opus_encoder_ctl(encoder, OPUS_SET_DTX(0));
 
     // decoder

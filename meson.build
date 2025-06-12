@@ -1,4 +1,4 @@
-project('jakki', 'cpp', version : '0.1', default_options : ['warning_level=1', 'cpp_std=c++20'])
+project('jakki', 'cpp', version : '0.2', default_options : ['warning_level=1', 'cpp_std=c++20', 'buildtype=debug'])
 
 qt6 = import('qt6')
 qt6_dep = dependency('qt6', modules: ['Core', 'Gui', 'Widgets'])
