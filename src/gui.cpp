@@ -11,13 +11,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->actionDisconnect, &QAction::triggered, this, &MainWindow::disconnect);
     connect(ui->actionNew_Connection, &QAction::triggered, this, &MainWindow::showConnectDialog);
     connect(ui->treeView, &QTreeView::customContextMenuRequested, this, &MainWindow::showContextMenu);
+    connect(&networkManager, &Network::channelsReceived, this, &MainWindow::addChannels);
 
-    QStandardItemModel *model = new QStandardItemModel(this);
+    model = new QStandardItemModel(this);
     model->setHorizontalHeaderLabels({"Channels"});
-    QStandardItem *channel = new QStandardItem("test");
-    channel->appendRow(new QStandardItem("#text"));
-    channel->appendRow(new QStandardItem("voice"));
-    model->appendRow(channel);
+
     ui->treeView->setModel(model);
     ui->treeView->expandAll();
 
@@ -54,7 +52,7 @@ void MainWindow::showConnectDialog() {
         networkManager.connectToServer();
         // initOpus(pwdata);
         // initPipewire(pwdata);
-        audioManager.startAudioThread();
+        // audioManager.startAudioThread();
     }
 }
 
@@ -82,4 +80,20 @@ void MainWindow::showContextMenu(const QPoint &pos) {
 
 void MainWindow::sendMessage() {
     qDebug("sendMessage");
+}
+
+void MainWindow::addChannels(const QStringList& channels) {
+    qDebug() << "Adding channels:" << channels;
+    
+    for (const QString& channelName : channels) {
+        QStandardItem *channel;
+        if (channelName.startsWith("#")) {
+            channel = new QStandardItem(channelName);
+        } else {
+            channel = new QStandardItem(channelName);
+        }
+        model->appendRow(channel);
+    }
+    
+    ui->treeView->expandAll();
 }

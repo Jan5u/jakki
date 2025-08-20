@@ -1,5 +1,12 @@
 #include "network.hpp"
 
+enum class EventType {
+    ServerInfo,
+    Message,
+    UserJoin,
+    Unknown
+};
+
 Network::Network() : audioManager(nullptr) {
     // Default constructor
 }
@@ -159,7 +166,7 @@ void Network::connectQUIC() {
     stream2 = SSL_new_stream(ssl, 0);
 
     sendMessage(stream1);
-    sendMessage(stream2);
+    // sendMessage(stream2);
     // sendMessage(stream3);
     // unidirectional receive voice stream
     // stream3 = SSL_accept_stream(ssl, 0);
@@ -189,10 +196,46 @@ void Network::handleEventPacket(char *buf, size_t bufsize) {
         std::string msg = data.substr(start, end - start);
         if (!msg.empty()) {
             std::cout << "Received message: " << msg << std::endl;
+            handleEventMessage(msg);
         }
         start = end + 1;
     }
     std::memset(buf, 0, bufsize);
+}
+
+EventType getEventType(const std::string& type) {
+    if (type == "ServerInfo") return EventType::ServerInfo;
+    if (type == "Message")    return EventType::Message;
+    if (type == "UserJoin")   return EventType::UserJoin;
+    return EventType::Unknown;
+}
+
+void Network::handleEventMessage(std::string msg) {
+    json j = json::parse(msg);
+    if (!j.contains("type")) {
+        std::cerr << "Invalid event\n";
+    }
+    EventType type = getEventType(j["type"]);
+    // match event type
+    switch (type) {
+        case EventType::ServerInfo:
+            if (j.contains("channels") && j["channels"].is_array()) {
+                // Extract channels from JSON and convert to QStringList
+                QStringList channelList;
+                for (const auto& channel : j["channels"]) {
+                    if (channel.is_string()) {
+                        channelList << QString::fromStdString(channel.get<std::string>());
+                    }
+                }
+                
+                std::cout << "Emitting " << channelList.size() << " channels to GUI\n";
+                emit channelsReceived(channelList);
+            }
+            break;
+        default:
+            std::cout << "Unknown event type.\n";
+            break;
+    }
 }
 
 void Network::receiveEventPackets() {

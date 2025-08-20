@@ -14,13 +14,16 @@ json_dep = dependency('nlohmann_json', required: true)
 sources = files(
     'src/main.cpp',
     'src/gui.cpp',
-    'src/gui.hpp',
     'src/audio.cpp',
-    'src/audio.hpp',
     'src/network.cpp',
+)
+
+headers = files(
+    'src/gui.hpp',
+    'src/audio.hpp', 
     'src/network.hpp',
 )
 
-sources += qt6.preprocess(ui_files : ['ui/main.ui', 'ui/connect.ui', 'ui/textchannel.ui', 'ui/settings.ui'])
+sources += qt6.preprocess(moc_headers : headers, ui_files : ['ui/main.ui', 'ui/connect.ui', 'ui/textchannel.ui', 'ui/settings.ui'])
 
 executable('jakki', sources, dependencies : [qt6_dep, openssl_dep, opus_dep, pipewire_dep, libavcodec_dep, libavformat_dep, thread_dep, json_dep])

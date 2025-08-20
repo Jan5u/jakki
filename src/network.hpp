@@ -14,6 +14,10 @@
 #include <nlohmann/json.hpp>
 #include "audio.hpp"
 
+#include <QObject>
+#include <QString>
+#include <QStringList>
+
 using json = nlohmann::json;
 
 #define SERVER_IP "20.82.143.121"
@@ -21,13 +25,18 @@ using json = nlohmann::json;
 
 class Audio;
 
-class Network {
+class Network : public QObject {
+    Q_OBJECT
+
     public:
         Network();
         Network(Audio& audio);
         void connectToServer();
         void disconnectQUIC();
         void sendVoicePackets(std::vector<uint8_t> encodedData);
+
+    signals:
+        void channelsReceived(const QStringList& channels);
 
     private:
         int sockfd;
@@ -49,6 +58,7 @@ class Network {
         void receiveEventPackets();
         void receiveVoicePackets();
         void handleEventPacket(char *buf, size_t bufsize);
+        void handleEventMessage(std::string msg); 
         static BIO *create_socket_bio(const char *hostname, const char *port, int family, BIO_ADDR **peer_addr);
         Audio* audioManager;
 };
