@@ -11,6 +11,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->actionDisconnect, &QAction::triggered, this, &MainWindow::disconnect);
     connect(ui->actionNew_Connection, &QAction::triggered, this, &MainWindow::showConnectDialog);
     connect(ui->treeView, &QTreeView::customContextMenuRequested, this, &MainWindow::showContextMenu);
+    connect(ui->treeView, &QTreeView::clicked, this, &MainWindow::onTreeViewItemClicked);
     connect(&networkManager, &Network::channelsReceived, this, &MainWindow::addChannels);
 
     model = new QStandardItemModel(this);
@@ -18,12 +19,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     ui->treeView->setModel(model);
     ui->treeView->expandAll();
-
-    QWidget *textChannelTab = new QWidget;
-    Ui::TextChannelTab uiTextChannel;
-    uiTextChannel.setupUi(textChannelTab);
-    connect(uiTextChannel.sendButton, &QPushButton::clicked, this, &MainWindow::sendMessage);
-    ui->tabWidget->addTab(textChannelTab, "Text Channel");
 
     QWidget *settingsTab = new QWidget;
     Ui::SettingsTab uiSettings;
@@ -79,7 +74,22 @@ void MainWindow::showContextMenu(const QPoint &pos) {
 }
 
 void MainWindow::sendMessage() {
-    qDebug("sendMessage");
+    int currentIndex = ui->tabWidget->currentIndex();
+    QString channelName = ui->tabWidget->tabText(currentIndex);
+    sendMessage(channelName);
+}
+
+void MainWindow::sendMessage(const QString &channelName) {
+    QWidget *currentTab = ui->tabWidget->currentWidget();
+    QLineEdit *messageInput = currentTab->findChild<QLineEdit*>("messageLineEdit");
+    if (messageInput) {
+        QString message = messageInput->text();
+        if (!message.isEmpty()) {
+            qDebug() << "Message:" << message << "to channel:" << channelName;
+            // TODO: send message
+            messageInput->clear();
+        }
+    }
 }
 
 void MainWindow::addChannels(const QStringList& channels) {
@@ -94,6 +104,53 @@ void MainWindow::addChannels(const QStringList& channels) {
         }
         model->appendRow(channel);
     }
-    
+
     ui->treeView->expandAll();
+}
+
+void MainWindow::onTreeViewItemClicked(const QModelIndex &index) {
+    if (!index.isValid()) return;
+    
+    QStandardItem *item = model->itemFromIndex(index);
+    if (!item) return;
+    
+    QString channelName = item->text();
+    qDebug() << "User clicked on channel:" << channelName;
+    
+    if (channelName.startsWith("#")) {
+        qDebug() << "Text channel selected:" << channelName;
+        openTextChannelTab(channelName);
+    } else {
+        qDebug() << "Voice channel selected:" << channelName;
+        audioManager.startAudioThread();
+    }
+}
+
+void MainWindow::openTextChannelTab(const QString &channelName) {
+    for (int i = 0; i < ui->tabWidget->count(); ++i) {
+        if (ui->tabWidget->tabText(i) == channelName) {
+            ui->tabWidget->setCurrentIndex(i);
+            return;
+        }
+    }
+    QWidget *textChannelTab = new QWidget;
+    Ui::TextChannelTab uiTextChannel;
+    uiTextChannel.setupUi(textChannelTab);
+    connect(uiTextChannel.sendButton, &QPushButton::clicked, [this, channelName]() {
+        sendMessage(channelName);
+    });
+    int tabIndex = ui->tabWidget->addTab(textChannelTab, channelName);
+    ui->tabWidget->setCurrentIndex(tabIndex);
+    
+    static bool closeConnected = false;
+    if (!closeConnected) {
+        connect(ui->tabWidget, &QTabWidget::tabCloseRequested, this, &MainWindow::closeTab);
+        closeConnected = true;
+    }
+}
+
+void MainWindow::closeTab(int index) {
+    QWidget *tab = ui->tabWidget->widget(index);
+    ui->tabWidget->removeTab(index);
+    delete tab;
 }

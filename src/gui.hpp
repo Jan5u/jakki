@@ -25,11 +25,15 @@ class MainWindow : public QMainWindow {
     Audio audioManager;
     Network networkManager;
     QStandardItemModel *model;
+    void openTextChannelTab(const QString &channelName);
   
   private slots:
     void disconnect();
     void showConnectDialog();
     void showContextMenu(const QPoint &pos);
     void sendMessage();
+    void sendMessage(const QString &channelName);
     void addChannels(const QStringList& channels);
+    void onTreeViewItemClicked(const QModelIndex &index);
+    void closeTab(int index);
 };
