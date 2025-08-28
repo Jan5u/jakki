@@ -20,9 +20,6 @@
 
 using json = nlohmann::json;
 
-#define SERVER_IP "20.82.143.121"
-#define SERVER_PORT 7777
-
 class Audio;
 
 class Network : public QObject {
@@ -31,7 +28,7 @@ class Network : public QObject {
     public:
         Network();
         Network(Audio& audio);
-        void connectToServer();
+        void connectToServer(QString address, QString port);
         void disconnectQUIC();
         void sendVoicePackets(std::vector<uint8_t> encodedData);
         void joinVoiceChannel(QString channelName);
@@ -54,7 +51,7 @@ class Network : public QObject {
         SSL *ssl = nullptr;
         BIO *bio = nullptr;
         void initOpenssl();
-        void connectQUIC();
+        void connectQUIC(QString address, QString port);
         void sendMessage(SSL *stream);
         void shutdown_ssl(SSL *ssl);
         void sendHeartbeat();

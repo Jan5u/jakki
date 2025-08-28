@@ -44,11 +44,9 @@ void MainWindow::showConnectDialog() {
 
     if (dialog.exec() == QDialog::Accepted) {
         QString address = uiDialog.lineEdit->text();
-        qDebug() << "Connect to:" << address;
-        networkManager.connectToServer();
-        // initOpus(pwdata);
-        // initPipewire(pwdata);
-        // audioManager.startAudioThread();
+        QString port = uiDialog.lineEdit_2->text();
+        qDebug() << "Connect to:" << address << ":" << port;
+        networkManager.connectToServer(address, port);
     }
 }
 

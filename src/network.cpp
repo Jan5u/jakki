@@ -15,7 +15,7 @@ Network::Network(Audio& audio) : audioManager(&audio) {
     // Constructor with Audio reference
 }
 
-void Network::connectToServer() {
+void Network::connectToServer(QString address, QString port) {
     std::cout << "connectToServer\n";
 
     if (connected) {
@@ -27,7 +27,7 @@ void Network::connectToServer() {
     initOpenssl();
 
     // connect QUIC
-    connectQUIC();
+    connectQUIC(address, port);
 }
 
 void Network::initOpenssl() {
@@ -116,7 +116,7 @@ BIO *Network::create_socket_bio(const char *hostname, const char *port, int fami
     return bio;
 }
 
-void Network::connectQUIC() {
+void Network::connectQUIC(QString address, QString port) {
     std::cout << "connectQUIC\n";
     const SSL_METHOD *method = OSSL_QUIC_client_method();
     // const SSL_METHOD *method = OSSL_QUIC_client_thread_method();
@@ -133,7 +133,9 @@ void Network::connectQUIC() {
     SSL_set_incoming_stream_policy(ssl, SSL_INCOMING_STREAM_POLICY_ACCEPT, 0);
 
     BIO_ADDR *peer_addr = nullptr;
-    bio = create_socket_bio(SERVER_IP, std::to_string(SERVER_PORT).c_str(), AF_INET, &peer_addr);
+    const char* SERVER_IP = address.toUtf8().constData();
+    const char* SERVER_PORT = port.toUtf8().constData();
+    bio = create_socket_bio(SERVER_IP, SERVER_PORT, AF_INET, &peer_addr);
     if (!bio) {
         std::cerr << "Failed to create and connect BIO\n";
         SSL_free(ssl);
