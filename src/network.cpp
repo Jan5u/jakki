@@ -387,33 +387,30 @@ void Network::joinVoiceChannel(QString channelName) {
     const char* message = channelNameStr.c_str();
     size_t written = 0;
     int result = SSL_write_ex(stream2, message, strlen(message), &written);
-        if (!result) {
+    if (!result) {
         std::cerr << "Failed to send channel name to voice stream\n";
     } else {
         std::cout << "Sent voice channel join request: " << channelNameStr << std::endl;
     }
 
-    // wait for confirmation
+    // wait for confirmation (only inspect the first 2 bytes for "ok")
     char confirmBuf[1024] = {};
     size_t confirmReadBytes = 0;
     std::cout << "Waiting for voice channel join confirmation...\n";
-    
+
     int confirmResult = SSL_read_ex(stream2, confirmBuf, sizeof(confirmBuf), &confirmReadBytes);
-    if (confirmResult && confirmReadBytes > 0) {
-        std::string confirmation(confirmBuf, confirmReadBytes);
-        std::cout << "Received confirmation: " << confirmation << std::endl;
-        
-        if (confirmation == "ok") {
+    if (confirmResult && confirmReadBytes >= 2) {
+        bool isOk = (confirmBuf[0] == 'o' && confirmBuf[1] == 'k');
+        if (isOk) {
             std::cout << "Successfully joined voice channel: " << channelNameStr << std::endl;
-            
-            // initialize record and playback loops
+
+            // Initialize record and playback loops
             audioManager->startAudioThread();
 
-            // start receiving voice packets
+            // Start receiving voice packets
             recvVoiceThread = std::jthread(&Network::receiveVoicePackets, this);
-            
         } else {
-            std::cerr << "Voice channel join rejected: " << confirmation << std::endl;
+            std::cerr << "Voice channel join rejected (did not receive leading 'ok')\n";
         }
     } else {
         std::cerr << "Failed to read confirmation from voice stream\n";
