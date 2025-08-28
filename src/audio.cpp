@@ -4,6 +4,14 @@ Audio::Audio(Network& network) : networkManager(network) {
     memset(&pwdata, 0, sizeof(pwdata));
 }
 
+Audio::~Audio() {
+    std::lock_guard<std::mutex> lock(bufferMutex);
+    for(auto &p : userStreams) {
+        if(p.second.decoder) opus_decoder_destroy(p.second.decoder);
+    }
+    if(encoder) opus_encoder_destroy(encoder);
+}
+
 void Audio::initPipewire() {
     pw_init(nullptr, nullptr);
 
@@ -82,8 +90,8 @@ void Audio::on_process_record(void *userdata) {
 
     struct pw_buffer *b;
     struct spa_buffer *buf;
-    int16_t *samples, max;
-    uint32_t c, n, n_channels, n_samples, peak, format;
+    int16_t *samples;
+    uint32_t n_channels, n_samples, format;
 
     if ((b = pw_stream_dequeue_buffer(data->capture_stream)) == NULL) {
         pw_log_warn("out of buffers: %m");
@@ -116,8 +124,8 @@ void Audio::on_process_playback(void *userdata) {
 
     struct pw_buffer *b;
     struct spa_buffer *buf;
-    int i, c, stride;
-    int16_t *dst, val;
+    int stride;
+    int16_t *dst;
 
     if ((b = pw_stream_dequeue_buffer(data->playback_stream)) == NULL) {
         pw_log_warn("out of buffers: %m");
@@ -132,30 +140,13 @@ void Audio::on_process_playback(void *userdata) {
     if (b->requested) {
         n_frames = SPA_MIN(b->requested, n_frames);
     }
-
-    // for (i = 0; i < n_frames; i++) {
-    //     data->accumulator += M_PI_M2 * 440 / DEFAULT_RATE;
-    //     if (data->accumulator >= M_PI_M2) {
-    //         data->accumulator -= M_PI_M2;
-    //     }
-    //     val = sin(data->accumulator) * DEFAULT_VOLUME * 32767.0;
-    //     for (c = 0; c < DEFAULT_CHANNELS; c++) {
-    //             *dst++ = val;
-    //     }
-    // }
-
-    // Mix all user audio buffers
-    std::vector<int16_t> mixedAudio = audio->mixUserAudioBuffers(n_frames);
     
-    // Copy mixed audio to output buffer
-    int samples_to_copy = std::min(static_cast<int>(mixedAudio.size()), n_frames * DEFAULT_CHANNELS);
-    std::memcpy(dst, mixedAudio.data(), samples_to_copy * sizeof(int16_t));
-    
-    // Fill remaining buffer with silence if needed
-    if (samples_to_copy < n_frames * DEFAULT_CHANNELS) {
-        std::memset(dst + samples_to_copy, 0, 
-                   (n_frames * DEFAULT_CHANNELS - samples_to_copy) * sizeof(int16_t));
+    // Mix user audio
+    std::vector<int16_t> mixed = audio->mixUserAudioBuffers(n_frames);
+    if((int)mixed.size() < n_frames * DEFAULT_CHANNELS) {
+        mixed.resize(n_frames * DEFAULT_CHANNELS, 0);
     }
+    memcpy(dst, mixed.data(), n_frames * stride);
 
     buf->datas[0].chunk->offset = 0;
     buf->datas[0].chunk->stride = stride;
@@ -164,47 +155,6 @@ void Audio::on_process_playback(void *userdata) {
     pw_stream_queue_buffer(data->playback_stream, b);
 }
 
-
-std::vector<int16_t> Audio::mixUserAudioBuffers(int n_frames) {
-    std::lock_guard<std::mutex> lock(bufferMutex);
-    
-    int total_samples = n_frames * DEFAULT_CHANNELS;
-    std::vector<int32_t> mixedBuffer(total_samples, 0);
-    int activeUsers = 0;
-    
-    // Mix one packet from each user
-    for (auto& [userId, audioQueue] : userAudioBuffers) {
-        if (!audioQueue.empty()) {
-            activeUsers++;
-            std::vector<int16_t> audioData = audioQueue.front();
-            audioQueue.pop(); // Remove after using
-            
-            int samples_to_mix = std::min(static_cast<int>(audioData.size()), total_samples);
-            
-            for (int i = 0; i < samples_to_mix; i++) {
-                mixedBuffer[i] += audioData[i];
-            }
-            
-            std::cout << "Mixed " << samples_to_mix << " samples from user: " << userId 
-                      << " (queue remaining: " << audioQueue.size() << ")\n";
-        }
-    }
-    
-    // Convert back to int16_t with clipping
-    std::vector<int16_t> result(total_samples);
-    for (int i = 0; i < total_samples; i++) {
-        int32_t sample = mixedBuffer[i];
-        if (sample > 32767) sample = 32767;
-        else if (sample < -32768) sample = -32768;
-        result[i] = static_cast<int16_t>(sample);
-    }
-    
-    if (activeUsers == 0) {
-        std::fill(result.begin(), result.end(), 0);
-    }
-    
-    return result;
-}
 
 void Audio::on_stream_param_changed(void *_data, uint32_t id, const spa_pod *param) {
     PipewireData *data = static_cast<PipewireData *>(_data);
@@ -240,11 +190,6 @@ void Audio::initOpus() {
     // opus_encoder_ctl(encoder, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
     opus_encoder_ctl(encoder, OPUS_SET_DTX(0));
 
-    // decoder
-    decoder = opus_decoder_create(DEFAULT_RATE, DEFAULT_CHANNELS, &error);
-    if (error != OPUS_OK) {
-        std::cout << "Failed to create Opus decoder: " << opus_strerror(error) << "\n";
-    }
 }
 
 void Audio::encodePacketWithOpus(OpusEncoder *encoder, std::vector<int16_t> *audio) {
@@ -264,8 +209,10 @@ void Audio::encodePacketWithOpus(OpusEncoder *encoder, std::vector<int16_t> *aud
 }
 
 void Audio::opusCleanup() {
-    opus_encoder_destroy(encoder);
-    opus_decoder_destroy(decoder);
+    if(encoder) {
+        opus_encoder_destroy(encoder);
+        encoder = nullptr;
+    }
 }
 
 void Audio::startAudioThread() {
@@ -278,46 +225,59 @@ void Audio::initAudioThread() {
 }
 
 void Audio::handleIncomingVoicePacket(const std::string& userId, const std::vector<uint8_t>& payload) {
-    std::cout << "Decoding voice packet from user: " << userId << "\n";
-    
-    // Decode the Opus packet
-    std::vector<int16_t> decodedAudio = decodeOpusPacket(payload);
-    
-    if (!decodedAudio.empty()) {
-        addUserAudio(userId, decodedAudio);
-        std::cout << "Added " << decodedAudio.size() << " samples to buffer for user: " << userId << "\n";
+    auto decoded = decodeOpusPacket(userId, payload);
+    if(!decoded.empty()) {
+        addUserAudio(userId, std::move(decoded));
     }
 }
 
-std::vector<int16_t> Audio::decodeOpusPacket(const std::vector<uint8_t>& payload) {
-    std::vector<int16_t> decodedAudio(FRAME_SIZE * DEFAULT_CHANNELS);
-    
-    int decodedSamples = opus_decode(decoder, payload.data(), payload.size(), 
-                                   decodedAudio.data(), FRAME_SIZE, 0);
-    
-    if (decodedSamples < 0) {
-        std::cerr << "Opus decode error: " << opus_strerror(decodedSamples) << "\n";
+std::vector<int16_t> Audio::decodeOpusPacket(const std::string& userId, const std::vector<uint8_t>& payload) {
+    std::lock_guard<std::mutex> lock(bufferMutex);
+    auto &stream = userStreams[userId];
+    if(!stream.decoder) {
+        int err; stream.decoder = opus_decoder_create(DEFAULT_RATE, DEFAULT_CHANNELS, &err);
+        if(err != OPUS_OK) {
+            std::cerr << "Failed create decoder for user " << userId << " err=" << opus_strerror(err) << "\n";
+            return {};
+        }
+    }
+    std::vector<int16_t> decoded(FRAME_SIZE * DEFAULT_CHANNELS);
+    int samples = opus_decode(stream.decoder, payload.data(), payload.size(), decoded.data(), FRAME_SIZE, 0);
+    if(samples < 0) {
+        std::cerr << "Decode fail user=" << userId << " err=" << opus_strerror(samples) << "\n";
         return {};
     }
-    
-    decodedAudio.resize(decodedSamples * DEFAULT_CHANNELS);
-    std::cout << "Decoded " << decodedSamples << " samples\n";
-    
-    return decodedAudio;
+    decoded.resize(samples * DEFAULT_CHANNELS);
+    return decoded;
 }
 
-void Audio::addUserAudio(const std::string& userId, const std::vector<int16_t>& audioData) {
+void Audio::addUserAudio(const std::string& userId, std::vector<int16_t>&& audioData) {
     std::lock_guard<std::mutex> lock(bufferMutex);
-    
-    // Add to queue but limit size for low latency
-    userAudioBuffers[userId].push(audioData);
-    
-    // Keep only the most recent packets
-    while (userAudioBuffers[userId].size() > MAX_BUFFER_SIZE) {
-        userAudioBuffers[userId].pop(); // Remove oldest
-        std::cout << "Dropped old packet for user: " << userId << " (buffer full)\n";
+    auto &stream = userStreams[userId];
+    stream.buffers.push(std::move(audioData));
+    while(stream.buffers.size() > MAX_BUFFER_SIZE) stream.buffers.pop();
+}
+
+std::vector<int16_t> Audio::mixUserAudioBuffers(int n_frames) {
+    std::lock_guard<std::mutex> lock(bufferMutex);
+    int samples_needed = n_frames * DEFAULT_CHANNELS;
+    std::vector<int32_t> mix(samples_needed, 0);
+    size_t contributors = 0;
+    for(auto &kv : userStreams) {
+        auto &q = kv.second.buffers;
+        if(q.empty()) continue;
+        auto packet = std::move(q.front()); q.pop();
+        if(packet.empty()) continue;
+        contributors++;
+        size_t copy = std::min((int)packet.size(), samples_needed);
+        for(size_t i=0;i<copy;i++) mix[i] += packet[i];
     }
-    
-    std::cout << "Queued audio for user: " << userId 
-              << " (queue size: " << userAudioBuffers[userId].size() << ")\n";
+    std::vector<int16_t> out(samples_needed, 0);
+    if(contributors == 0) return out;
+    for(int i=0;i<samples_needed;i++) {
+        int32_t v = contributors > 1 ? mix[i] / (int32_t)contributors : mix[i];
+        if(v > INT16_MAX) v = INT16_MAX; else if(v < INT16_MIN) v = INT16_MIN;
+        out[i] = (int16_t)v;
+    }
+    return out;
 }

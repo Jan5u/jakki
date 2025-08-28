@@ -1,6 +1,5 @@
 #pragma once
 
-#include <iostream>
 #include <opus/opus.h>
 #include <pipewire/pipewire.h>
 #include <queue>
@@ -33,12 +32,16 @@ class Audio {
     Audio(Network& network);
     void startAudioThread();
     void handleIncomingVoicePacket(const std::string& userId, const std::vector<uint8_t>& payload);
+    ~Audio();
 
   private:
     PipewireData pwdata;
     std::jthread audioLoopThread;
     OpusEncoder *encoder;
-    OpusDecoder *decoder;
+  struct UserStream {
+    OpusDecoder* decoder{nullptr};
+    std::queue<std::vector<int16_t>> buffers;
+  };
     void initPipewire();
     void initOpus();
     void initAudioThread();
@@ -48,10 +51,10 @@ class Audio {
     void encodePacketWithOpus(OpusEncoder *encoder, std::vector<int16_t> *audio);
     void opusCleanup();
     Network& networkManager;
-    std::unordered_map<std::string, std::queue<std::vector<int16_t>>> userAudioBuffers;
+    std::unordered_map<std::string, UserStream> userStreams; // per-user decoder + queued frames
     std::mutex bufferMutex;
     static const size_t MAX_BUFFER_SIZE = 5; // Max 5 packets per user
     std::vector<int16_t> mixUserAudioBuffers(int n_frames);
-    std::vector<int16_t> decodeOpusPacket(const std::vector<uint8_t>& payload);
-    void addUserAudio(const std::string& userId, const std::vector<int16_t>& audioData);
+    std::vector<int16_t> decodeOpusPacket(const std::string& userId, const std::vector<uint8_t>& payload);
+    void addUserAudio(const std::string& userId, std::vector<int16_t>&& audioData);
 };
