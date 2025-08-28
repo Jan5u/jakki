@@ -173,7 +173,7 @@ void Network::connectQUIC() {
     // SSL_get_stream_type()
 
     recvEventThread = std::jthread(&Network::receiveEventPackets, this);
-    recvVoiceThread = std::jthread(&Network::receiveVoicePackets, this);
+    // recvVoiceThread = std::jthread(&Network::receiveVoicePackets, this);
     heartbeatThread = std::jthread(&Network::sendHeartbeat, this);
 
 
@@ -230,6 +230,14 @@ void Network::handleEventMessage(std::string msg) {
                 
                 std::cout << "Emitting " << channelList.size() << " channels to GUI\n";
                 emit channelsReceived(channelList);
+            }
+            break;
+        case EventType::UserJoin:
+            if (j.contains("user") && j.contains("channel")) {
+                QString user = QString::fromStdString(j["user"].get<std::string>());
+                QString channel = QString::fromStdString(j["channel"].get<std::string>());
+                std::cout << "User " << user.toStdString() << " joined channel " << channel.toStdString() << std::endl;
+                emit userJoinedChannel(user, channel);
             }
             break;
         default:
@@ -368,5 +376,44 @@ void Network::sendHeartbeat() {
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    }
+}
+
+void Network::joinVoiceChannel(QString channelName) {
+    // send channel name to voice stream
+    std::string channelNameStr = channelName.toStdString();
+    const char* message = channelNameStr.c_str();
+    size_t written = 0;
+    int result = SSL_write_ex(stream2, message, strlen(message), &written);
+        if (!result) {
+        std::cerr << "Failed to send channel name to voice stream\n";
+    } else {
+        std::cout << "Sent voice channel join request: " << channelNameStr << std::endl;
+    }
+
+    // wait for confirmation
+    char confirmBuf[1024] = {};
+    size_t confirmReadBytes = 0;
+    std::cout << "Waiting for voice channel join confirmation...\n";
+    
+    int confirmResult = SSL_read_ex(stream2, confirmBuf, sizeof(confirmBuf), &confirmReadBytes);
+    if (confirmResult && confirmReadBytes > 0) {
+        std::string confirmation(confirmBuf, confirmReadBytes);
+        std::cout << "Received confirmation: " << confirmation << std::endl;
+        
+        if (confirmation == "ok") {
+            std::cout << "Successfully joined voice channel: " << channelNameStr << std::endl;
+            
+            // initialize record and playback loops
+            audioManager->startAudioThread();
+
+            // start receiving voice packets
+            recvVoiceThread = std::jthread(&Network::receiveVoicePackets, this);
+            
+        } else {
+            std::cerr << "Voice channel join rejected: " << confirmation << std::endl;
+        }
+    } else {
+        std::cerr << "Failed to read confirmation from voice stream\n";
     }
 }

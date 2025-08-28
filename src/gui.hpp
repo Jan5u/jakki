@@ -36,4 +36,5 @@ class MainWindow : public QMainWindow {
     void addChannels(const QStringList& channels);
     void onTreeViewItemClicked(const QModelIndex &index);
     void closeTab(int index);
+    void onUserJoinedChannel(const QString& user, const QString& channel);
 };

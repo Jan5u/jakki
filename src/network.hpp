@@ -34,9 +34,12 @@ class Network : public QObject {
         void connectToServer();
         void disconnectQUIC();
         void sendVoicePackets(std::vector<uint8_t> encodedData);
+        void joinVoiceChannel(QString channelName);
 
     signals:
         void channelsReceived(const QStringList& channels);
+        void userJoinedChannel(const QString& user, const QString& channel);
+
 
     private:
         int sockfd;

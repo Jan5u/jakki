@@ -13,6 +13,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->treeView, &QTreeView::customContextMenuRequested, this, &MainWindow::showContextMenu);
     connect(ui->treeView, &QTreeView::clicked, this, &MainWindow::onTreeViewItemClicked);
     connect(&networkManager, &Network::channelsReceived, this, &MainWindow::addChannels);
+    connect(&networkManager, &Network::userJoinedChannel, this, &MainWindow::onUserJoinedChannel);
 
     model = new QStandardItemModel(this);
     model->setHorizontalHeaderLabels({"Channels"});
@@ -122,7 +123,7 @@ void MainWindow::onTreeViewItemClicked(const QModelIndex &index) {
         openTextChannelTab(channelName);
     } else {
         qDebug() << "Voice channel selected:" << channelName;
-        audioManager.startAudioThread();
+        networkManager.joinVoiceChannel(channelName);
     }
 }
 
@@ -153,4 +154,29 @@ void MainWindow::closeTab(int index) {
     QWidget *tab = ui->tabWidget->widget(index);
     ui->tabWidget->removeTab(index);
     delete tab;
+}
+
+void MainWindow::onUserJoinedChannel(const QString& user, const QString& channel) {
+    qDebug() << "User" << user << "joined channel" << channel;
+    QStandardItem* channelItem = nullptr;
+    for (int i = 0; i < model->rowCount(); ++i) {
+        QStandardItem* item = model->item(i);
+        if (item && item->text() == channel) {
+            channelItem = item;
+            break;
+        }
+    }
+    if (!channelItem) {
+        qDebug() << "Channel" << channel << "not found in tree";
+        return;
+    }
+    for (int i = 0; i < channelItem->rowCount(); ++i) {
+        QStandardItem* userItem = channelItem->child(i);
+        if (userItem && userItem->text() == user) {
+            qDebug() << "User" << user << "already in channel" << channel;
+            return;
+        }
+    }
+    QStandardItem* userItem = new QStandardItem(user);
+    channelItem->appendRow(userItem);
 }
