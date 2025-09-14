@@ -7,7 +7,7 @@
 #### Debian
 
 ```bash
-sudo apt install meson ninja-build qt6-base-dev libssl-dev libnotify4 libpipewire-0.3-dev libopus-dev libavcodec-dev libavformat-dev
+sudo apt install meson ninja-build qt6-base-dev libssl-dev libnotify-dev libpipewire-0.3-dev libopus-dev nlohmann-json3-dev libavcodec-dev libavformat-dev
 ```
 
 #### Arch
@@ -39,7 +39,9 @@ XDG_RUNTIME_DIR=/run/user/$(id -u) ./build/jakki
 ### BUILDING
 
 ```bash
-meson setup build
-meson compile -C build
-# meson install -C build
+mkdir build
+cd build
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
+ninja
+./jakki
 ```
