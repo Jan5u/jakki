@@ -1,0 +1,16 @@
+{
+  "dependencies": [
+    "ffmpeg",
+    "nlohmann-json",
+    "openssl",
+    "opus",
+    {
+      "name": "qtbase",
+      "default-features": false,
+      "features": [
+        "gui",
+        "widgets"
+      ]
+    }
+  ]
+}
