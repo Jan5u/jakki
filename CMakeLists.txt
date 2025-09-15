@@ -24,15 +24,30 @@ endif()
 include_directories(${OPUS_INCLUDE_DIRS} ${AVFORMAT_INCLUDE_DIRS} ${AVCODEC_INCLUDE_DIRS} ${PIPEWIRE_INCLUDE_DIRS} ${LIBNOTIFY_INCLUDE_DIRS})
 
 qt_standard_project_setup()
-qt_add_executable(jakki
+set(COMMON_SOURCES
     src/main.cpp
     src/gui.hpp
     src/gui.cpp
     src/network.hpp
     src/network.cpp
-    src/audio.hpp
-    src/audio.cpp
+    src/audio/audio_impl.hpp
+    src/audio/audio_impl.cpp
+    src/audio/audio.hpp
+    src/audio/audio.cpp
 )
+if(WIN32)
+    list(APPEND COMMON_SOURCES
+        src/audio/wasapi_impl.hpp
+        src/audio/wasapi_impl.cpp
+    )
+else()
+    list(APPEND COMMON_SOURCES
+        src/audio/pipewire_impl.hpp
+        src/audio/pipewire_impl.cpp
+    )
+endif()
+
+qt_add_executable(jakki ${COMMON_SOURCES})
 qt_add_ui(jakki SOURCES ui/main.ui ui/connect.ui ui/textchannel.ui ui/settings.ui)
 
 target_link_libraries(jakki PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets OpenSSL::SSL OpenSSL::Crypto ${OPUS_LIBRARIES} nlohmann_json::nlohmann_json ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} Threads::Threads)

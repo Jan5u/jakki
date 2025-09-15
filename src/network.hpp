@@ -12,7 +12,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <nlohmann/json.hpp>
-#include "audio.hpp"
+#include "audio/audio.hpp"
 
 #include <QObject>
 #include <QString>
