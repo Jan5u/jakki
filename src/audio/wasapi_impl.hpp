@@ -2,13 +2,17 @@
 
 #include "audio_impl.hpp"
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 
-/**
- * WasapiImpl - Windows-specific implementation using WASAPI
- * 
- * TODO: This is a placeholder implementation. The actual WASAPI implementation
- * will be added in the future.
- */
+#include <initguid.h>
+#include <mmdeviceapi.h>
+#include <audioclient.h>
+#include <functiondiscoverykeys.h>
+
+#define REFTIMES_PER_SEC 10000000
+
 class WasapiImpl : public AudioImpl {
 public:
     explicit WasapiImpl(Network& network);
@@ -21,18 +25,32 @@ public:
     void cleanup() override;
 
 private:
-    // TODO: Add WASAPI-specific methods:
-    // - processCapture
-    // - processPlayback
-    // - setupAudioCapture
-    // - setupAudioPlayback
+    void startPlayback();
+    void playbackLoop();
+    void captureLoop();
+    void createInstance();
+    void enumerateAudioDevices();
+    void printEndpointProperties(IMMDevice *Device);
+    void selectDefaultAudioDevices();
+
+
+    IMMDeviceEnumerator *pEnumerator = nullptr;
+    IMMDeviceCollection *pEndpoints = nullptr;
+    IMMDevice *pPlaybackDevice = nullptr;
+    IMMDevice *pCaptureDevice = nullptr;
+    IAudioClient *pCaptureClient = nullptr;
+    IAudioClient *pRenderClient = nullptr;
+    IAudioCaptureClient *pCaptureService = nullptr;
+    IAudioRenderClient *pRenderService = nullptr;
+    WAVEFORMATEX *pwfx = NULL;
+    WAVEFORMATEX *pb_pwfx = NULL;
+    std::jthread audioPlaybackThread;
+    std::jthread audioCaptureThread;
+    REFERENCE_TIME hnsRequestedDuration = REFTIMES_PER_SEC;
+
     
-    // TODO: Add WASAPI-specific data members:
-    // - Device enumerator
-    // - Audio clients
-    // - Format information
-    // - Event handles
-    
-    // Thread management
-    std::jthread audioLoopThread;
+    // Audio buffering for Opus frame alignment
+    std::vector<float> playbackBuffer;
+    std::vector<float> audioBuffer;
+    const size_t OPUS_FRAME_SAMPLES = 960 * 2; // 960 samples per channel * 2 channels
 };
