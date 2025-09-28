@@ -23,7 +23,6 @@ void WasapiImpl::initAudio() {
     createInstance();
     enumerateAudioDevices();
     selectDefaultAudioDevices();
-    // startPlayback();
 }
 
 void WasapiImpl::startCapture() {
@@ -48,8 +47,53 @@ void WasapiImpl::playbackLoop() {
     }
 
     pPlaybackDevice->Activate(IID_IAudioClient, CLSCTX_ALL, NULL, (void**)&pRenderClient);
-    // pRenderClient->GetMixFormat(&pwfx);
-    pRenderClient->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, 200000, 0, pwfx, NULL);
+    pRenderClient->GetMixFormat(&pb_pwfx);
+
+    WAVEFORMATEX* pModifiedFormat = nullptr;
+    WAVEFORMATEXTENSIBLE modifiedFormat = {0};
+    if (pb_pwfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+        auto wfex = reinterpret_cast<const WAVEFORMATEXTENSIBLE*>(pb_pwfx);
+        std::cout << "  EXTENSIBLE FORMAT DETAILS:" << std::endl;
+        std::cout << "    cbSize: " << pb_pwfx->cbSize << std::endl;
+        std::cout << "    wValidBitsPerSample: " << wfex->Samples.wValidBitsPerSample << std::endl;
+        std::cout << "    nChannels: " << wfex->Format.nChannels << std::endl;
+        std::cout << "    wBitsPerSample: " << wfex->Format.wBitsPerSample << std::endl;
+
+        modifiedFormat = *wfex;
+        modifiedFormat.Format.nChannels = 2;
+        modifiedFormat.Format.nBlockAlign = (modifiedFormat.Format.nChannels * modifiedFormat.Format.wBitsPerSample) / 8;
+        modifiedFormat.Format.nAvgBytesPerSec = modifiedFormat.Format.nSamplesPerSec * modifiedFormat.Format.nBlockAlign;
+        modifiedFormat.Format.cbSize = sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX);
+        modifiedFormat.dwChannelMask = KSAUDIO_SPEAKER_STEREO;
+
+        pModifiedFormat = reinterpret_cast<WAVEFORMATEX*>(&modifiedFormat);
+    }
+
+    WAVEFORMATEX* pFormatToUse = nullptr;
+    WAVEFORMATEX* pClosestMatch = nullptr;
+    HRESULT hr = pRenderClient->IsFormatSupported(AUDCLNT_SHAREMODE_SHARED, pModifiedFormat, &pClosestMatch);
+    if (hr == S_OK) {
+        std::cout << "Modified format is supported exactly" << std::endl;
+        pFormatToUse = pModifiedFormat;
+    } else if (hr == S_FALSE) {
+        std::cout << "Modified format is not supported, but closest match found" << std::endl;
+        pFormatToUse = pClosestMatch;
+        std::cout << "Closest Match Format:" << std::endl;
+        std::cout << "  Channels: " << pClosestMatch->nChannels << std::endl;
+        std::cout << "  Sample Rate: " << pClosestMatch->nSamplesPerSec << std::endl;
+        std::cout << "  Bits Per Sample: " << pClosestMatch->wBitsPerSample << std::endl;
+    } else {
+        std::cout << "Modified format is not supported at all, using original" << std::endl;
+        pFormatToUse = pb_pwfx;
+    }
+
+    std::cout << "pFormatToUse Match Format:" << std::endl;
+    std::cout << "  Channels: " << pFormatToUse->nChannels << std::endl;
+    std::cout << "  Sample Rate: " << pFormatToUse->nSamplesPerSec << std::endl;
+    std::cout << "  Bits Per Sample: " << pFormatToUse->wBitsPerSample << std::endl;
+
+
+    pRenderClient->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, 200000, 0, pFormatToUse, NULL);
 
     pRenderClient->SetEventHandle(hRenderEvent);
 
@@ -74,13 +118,13 @@ void WasapiImpl::playbackLoop() {
         // Get the buffer
         pRenderService->GetBuffer(numFramesAvailable, &pData);
         float* floatBuffer = reinterpret_cast<float*>(pData);
-        size_t totalSamples = numFramesAvailable * pwfx->nChannels;
+        size_t totalSamples = numFramesAvailable * pFormatToUse->nChannels;
         
         // If we need more audio data, mix some
         if (playbackBuffer.size() < totalSamples) {
             // Get a full Opus frame worth of data (or more if needed)
             size_t samplesNeeded = std::max(totalSamples, (size_t)OPUS_FRAME_SAMPLES);
-            std::vector<float> newAudio = mixUserAudioBuffersFloat(samplesNeeded / pwfx->nChannels);
+            std::vector<float> newAudio = mixUserAudioBuffersFloat(samplesNeeded / pFormatToUse->nChannels);
             playbackBuffer.insert(playbackBuffer.end(), newAudio.begin(), newAudio.end());
         }
         
