@@ -76,7 +76,7 @@ void PipewireImpl::initPipewire() {
     const struct spa_pod *params[1];
 
     spa_audio_info_raw raw_info;
-    raw_info.format = SPA_AUDIO_FORMAT_S16;
+    raw_info.format = SPA_AUDIO_FORMAT_F32;
     raw_info.channels = DEFAULT_CHANNELS;
     raw_info.rate = DEFAULT_RATE;
 
@@ -118,7 +118,7 @@ void PipewireImpl::on_process_record(void *userdata) {
 
     struct pw_buffer *b;
     struct spa_buffer *buf;
-    int16_t *samples;
+    float *samples;
     uint32_t n_channels, n_samples;
 
     if ((b = pw_stream_dequeue_buffer(data->capture_stream)) == NULL) {
@@ -127,19 +127,19 @@ void PipewireImpl::on_process_record(void *userdata) {
     }
 
     buf = b->buffer;
-    if ((samples = static_cast<int16_t *>(buf->datas[0].data)) == NULL) {
+    if ((samples = static_cast<float *>(buf->datas[0].data)) == NULL) {
         pw_stream_queue_buffer(data->capture_stream, b);
         return;
     }
 
     n_channels = data->format.info.raw.channels;
-    n_samples = buf->datas[0].chunk->size / sizeof(int16_t);
+    n_samples = buf->datas[0].chunk->size / sizeof(float);
 
     // Copy audio data
-    std::vector<int16_t> audioData(samples, samples + n_samples);
+    std::vector<float> audioData(samples, samples + n_samples);
     
     // Encode and send packet
-    audio->encodePacketWithOpus(audioData);
+    audio->encodePacketWithOpusFloat(audioData.data(), audioData.size());
 
     pw_stream_queue_buffer(data->capture_stream, b);
 }
@@ -150,8 +150,7 @@ void PipewireImpl::on_process_playback(void *userdata) {
 
     struct pw_buffer *b;
     struct spa_buffer *buf;
-    int stride;
-    int16_t *dst;
+    float *dst;
 
     if ((b = pw_stream_dequeue_buffer(data->playback_stream)) == NULL) {
         pw_log_warn("out of buffers: %m");
@@ -159,27 +158,25 @@ void PipewireImpl::on_process_playback(void *userdata) {
     }
 
     buf = b->buffer;
-    if ((dst = static_cast<int16_t *>(buf->datas[0].data)) == NULL) {
+    if ((dst = static_cast<float *>(buf->datas[0].data)) == NULL) {
         pw_stream_queue_buffer(data->playback_stream, b);
         return;
     }
 
-    stride = sizeof(int16_t) * DEFAULT_CHANNELS;
-    int n_frames = buf->datas[0].maxsize / stride;
+    int n_frames = buf->datas[0].maxsize / (sizeof(float) * DEFAULT_CHANNELS);
     if (b->requested) {
         n_frames = SPA_MIN(b->requested, n_frames);
     }
-    
-    // Mix user audio
-    std::vector<int16_t> mixed = audio->mixUserAudioBuffers(n_frames);
-    if((int)mixed.size() < n_frames * DEFAULT_CHANNELS) {
-        mixed.resize(n_frames * DEFAULT_CHANNELS, 0);
+
+    std::vector<float> mixed = audio->mixUserAudioBuffersFloat(n_frames);
+    if (static_cast<int>(mixed.size()) < n_frames * DEFAULT_CHANNELS) {
+        mixed.resize(n_frames * DEFAULT_CHANNELS, 0.0f);
     }
-    memcpy(dst, mixed.data(), n_frames * stride);
+    memcpy(dst, mixed.data(), n_frames * sizeof(float) * DEFAULT_CHANNELS);
 
     buf->datas[0].chunk->offset = 0;
-    buf->datas[0].chunk->stride = stride;
-    buf->datas[0].chunk->size = n_frames * stride;
+    buf->datas[0].chunk->stride = sizeof(float) * DEFAULT_CHANNELS;
+    buf->datas[0].chunk->size = n_frames * sizeof(float) * DEFAULT_CHANNELS;
 
     pw_stream_queue_buffer(data->playback_stream, b);
 }
