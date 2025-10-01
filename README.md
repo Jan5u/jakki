@@ -36,7 +36,6 @@ Run with env variable
 XDG_RUNTIME_DIR=/run/user/$(id -u) ./build/jakki
 ```
 
-
 #### Building
 
 ```bash
@@ -44,6 +43,14 @@ cmake --preset gcc-release
 cd build/release
 ninja
 ./jakki
+```
+
+#### Building with docker
+
+When Building with docker only required dependency is docker itself.
+
+```bash
+./build-with-docker.sh
 ```
 
 ### Building on Windows using vcpkg
@@ -63,28 +70,36 @@ ninja
 ```bash
 winget install --id Microsoft.VisualStudio.2022.Community --override "--quiet --add Microsoft.VisualStudio.Workload.NativeDesktop --includeRecommended"
 ```
+
 ```bash
 winget install --id Git.Git
 ```
 
-
 - Install `vcpkg`
+
 ```bash
 git clone https://github.com/microsoft/vcpkg.git; cd vcpkg; .\bootstrap-vcpkg.bat -disableMetrics
 ```
 
 #### Building
+
 1. Open `x64 Native Tools Command Prompt for VS 2022`
 2. Create CMakeFiles using preset
+
 ```bash
 cmake --preset vcpkg-release
 ```
+
 3. Navigate to build folder
+
 ```bash
 cd build\release
 ```
+
 4. Build with ninja
+
 ```bash
 ninja
 .\jakki.exe
 ```
+

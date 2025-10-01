@@ -1,0 +1,26 @@
+# Git files
+.git
+.gitignore
+
+# Build artifacts
+build/
+vcpkg_installed/
+.cache/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Docker files
+Dockerfile
+.dockerignore
+
+# Documentation
+README.md
+LICENSE
+
+# Build script
+/build-with-docker.sh
