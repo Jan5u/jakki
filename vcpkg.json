@@ -1,0 +1,23 @@
+{
+  "dependencies": [
+    {
+      "name": "ffmpeg",
+      "default-features": false,
+      "features": [
+        "avcodec",
+        "avformat"
+      ]
+    },
+    "nlohmann-json",
+    "openssl",
+    "opus",
+    {
+      "name": "qtbase",
+      "default-features": false,
+      "features": [
+        "gui",
+        "widgets"
+      ]
+    }
+  ]
+}

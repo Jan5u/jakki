@@ -4,15 +4,18 @@
 #include <cstring>
 #include <thread>
 #ifdef _WIN32
-# include <winsock2.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
 #else
-# include <sys/socket.h>
+#include <sys/socket.h>
 #endif
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <nlohmann/json.hpp>
-#include "audio.hpp"
+#include "audio/audio.hpp"
 
 #include <QObject>
 #include <QString>

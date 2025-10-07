@@ -37,7 +37,6 @@ void Network::initOpenssl() {
     OpenSSL_add_ssl_algorithms();
 }
 
-// yoinked from openssl example
 BIO *Network::create_socket_bio(const char *hostname, const char *port, int family, BIO_ADDR **peer_addr) {
     int sock = -1;
     BIO_ADDRINFO *res;
@@ -133,8 +132,10 @@ void Network::connectQUIC(QString address, QString port) {
     SSL_set_incoming_stream_policy(ssl, SSL_INCOMING_STREAM_POLICY_ACCEPT, 0);
 
     BIO_ADDR *peer_addr = nullptr;
-    const char* SERVER_IP = address.toUtf8().constData();
-    const char* SERVER_PORT = port.toUtf8().constData();
+    QByteArray addressUtf8 = address.toUtf8();
+    QByteArray portUtf8 = port.toUtf8();
+    const char* SERVER_IP = addressUtf8.constData();
+    const char* SERVER_PORT = portUtf8.constData();
     bio = create_socket_bio(SERVER_IP, SERVER_PORT, AF_INET, &peer_addr);
     if (!bio) {
         std::cerr << "Failed to create and connect BIO\n";

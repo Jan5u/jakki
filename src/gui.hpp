@@ -5,7 +5,7 @@
 #include <QWidgetAction>
 #include <QLabel>
 #include "network.hpp"
-#include "audio.hpp"
+#include "audio/audio.hpp"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
