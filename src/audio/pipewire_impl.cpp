@@ -6,6 +6,8 @@
 PipewireImpl::PipewireImpl(Network& network) 
     : AudioImpl(network) {
     memset(&pwdata, 0, sizeof(pwdata));
+    inputDevices.clear();
+    outputDevices.clear();
 }
 
 PipewireImpl::~PipewireImpl() {
@@ -15,16 +17,46 @@ PipewireImpl::~PipewireImpl() {
 void PipewireImpl::initAudio() {
     // Initialize Opus codec
     initOpus();
-}
-
-void PipewireImpl::startCapture() {
+    
+    // Initialize PipeWire
     audioLoopThread = std::jthread([this] { initPipewire(); });
 }
 
+void PipewireImpl::startCapture() {
+    capturing = true;
+    setStreamsActive(true);
+}
+
 void PipewireImpl::stopCapture() {
+    capturing = false;
+    setStreamsActive(false);
+
     if (pwdata.loop) {
         pw_main_loop_quit(pwdata.loop);
     }
+}
+
+void PipewireImpl::setStreamsActive(bool active) {
+    if (!pwdata.loop) {
+        return;
+    }
+
+    // Use pw_loop_invoke to call pw_stream_set_active from the correct thread context
+    pw_loop_invoke(pw_main_loop_get_loop(pwdata.loop), setStreamsActiveCallback, SPA_ID_INVALID, &active, sizeof(active), true, this);
+}
+
+int PipewireImpl::setStreamsActiveCallback(struct spa_loop *loop, bool async, uint32_t seq, const void *data, size_t size, void *user_data) {
+    PipewireImpl *self = static_cast<PipewireImpl *>(user_data);
+    bool active = *static_cast<const bool *>(data);
+
+    if (self->pwdata.capture_stream) {
+        pw_stream_set_active(self->pwdata.capture_stream, active);
+    }
+    if (self->pwdata.playback_stream) {
+        pw_stream_set_active(self->pwdata.playback_stream, active);
+    }
+
+    return 0;
 }
 
 void PipewireImpl::cleanup() {
@@ -38,6 +70,14 @@ void PipewireImpl::cleanup() {
     opusCleanup();
 }
 
+std::vector<AudioDevice> PipewireImpl::getInputDevices() const {
+    return inputDevices;
+}
+
+std::vector<AudioDevice> PipewireImpl::getOutputDevices() const {
+    return outputDevices;
+}
+
 void PipewireImpl::initPipewire() {
     pw_init(nullptr, nullptr);
 
@@ -45,6 +85,12 @@ void PipewireImpl::initPipewire() {
     pwdata.context = pw_context_new(pw_main_loop_get_loop(pwdata.loop), nullptr, 0);
     pwdata.core = pw_context_connect(pwdata.context, nullptr, 0);
     pwdata.registry = pw_core_get_registry(pwdata.core, PW_VERSION_REGISTRY, 0);
+
+    pw_registry_events registry_events = {
+        .version = PW_VERSION_REGISTRY_EVENTS,
+        .global = registry_event_global,
+        .global_remove = registry_event_global_remove,
+    };
 
     pw_stream_events stream_events = {
         .version = PW_VERSION_STREAM_EVENTS,
@@ -60,14 +106,14 @@ void PipewireImpl::initPipewire() {
     pwdata.capture_stream = pw_stream_new_simple(
         pw_main_loop_get_loop(pwdata.loop), "jakki-capture",
         pw_properties_new(PW_KEY_MEDIA_TYPE, "Audio", PW_KEY_MEDIA_CATEGORY, "Capture",
-                          PW_KEY_MEDIA_ROLE, "Music", PW_KEY_NODE_LATENCY, "20/1000",
+                          PW_KEY_MEDIA_ROLE, "Communication", PW_KEY_NODE_LATENCY, "20/1000",
                           PW_KEY_NODE_RATE, "1/20",   PW_KEY_NODE_FORCE_QUANTUM, "960", nullptr),
         &stream_events, this);
 
     pwdata.playback_stream = pw_stream_new_simple(
         pw_main_loop_get_loop(pwdata.loop), "jakki-playback",
         pw_properties_new(PW_KEY_MEDIA_TYPE, "Audio", PW_KEY_MEDIA_CATEGORY, "Playback",
-                          PW_KEY_MEDIA_ROLE, "Music", PW_KEY_NODE_LATENCY, "20/1000",
+                          PW_KEY_MEDIA_ROLE, "Communication", PW_KEY_NODE_LATENCY, "20/1000",
                           PW_KEY_NODE_RATE, "1/20",   PW_KEY_NODE_FORCE_QUANTUM, "960", nullptr),
         &stream_events_playback, this);
 
@@ -84,19 +130,23 @@ void PipewireImpl::initPipewire() {
 
     pw_stream_connect(pwdata.capture_stream, PW_DIRECTION_INPUT, PW_ID_ANY,
                       static_cast<pw_stream_flags>(PW_STREAM_FLAG_AUTOCONNECT |
-                                                  PW_STREAM_FLAG_MAP_BUFFERS |
-                                                  PW_STREAM_FLAG_RT_PROCESS),
+                                                   PW_STREAM_FLAG_MAP_BUFFERS |
+                                                   PW_STREAM_FLAG_RT_PROCESS |
+                                                   PW_STREAM_FLAG_INACTIVE),
                       params, 1);
 
     pw_stream_connect(pwdata.playback_stream, PW_DIRECTION_OUTPUT, PW_ID_ANY,
                       static_cast<pw_stream_flags>(PW_STREAM_FLAG_AUTOCONNECT |
-                                                  PW_STREAM_FLAG_MAP_BUFFERS |
-                                                  PW_STREAM_FLAG_RT_PROCESS),
+                                                   PW_STREAM_FLAG_MAP_BUFFERS |
+                                                   PW_STREAM_FLAG_RT_PROCESS |
+                                                   PW_STREAM_FLAG_INACTIVE),
                       params, 1);
 
-    // Start running loop
-    pw_main_loop_run(pwdata.loop);
+    spa_zero(pwdata.registry_listener);
+    pw_registry_add_listener(pwdata.registry, &pwdata.registry_listener, &registry_events, this);
 
+    pw_main_loop_run(pwdata.loop);
+    
     // Cleanup when loop exits
     pw_stream_disconnect(pwdata.playback_stream);
     pw_stream_disconnect(pwdata.capture_stream);
@@ -199,4 +249,71 @@ void PipewireImpl::on_stream_param_changed(void *_data, uint32_t id, const spa_p
 
     std::cout << "Capturing rate: " << data->format.info.raw.rate
               << " channels: " << data->format.info.raw.channels << std::endl;
+}
+
+void PipewireImpl::registry_event_global(void *data, uint32_t id, uint32_t permissions, const char *type, uint32_t version, const struct spa_dict *props) {
+    PipewireImpl *impl = static_cast<PipewireImpl *>(data);
+
+    if (strcmp(type, PW_TYPE_INTERFACE_Node) != 0) {
+        return;
+    }
+
+    const char *media_class = spa_dict_lookup(props, PW_KEY_MEDIA_CLASS);
+    const char *node_name = spa_dict_lookup(props, PW_KEY_NODE_NAME);
+    const char *node_description = spa_dict_lookup(props, PW_KEY_NODE_DESCRIPTION);
+    const char *device_name = spa_dict_lookup(props, PW_KEY_DEVICE_NAME);
+
+    if (!media_class || !node_description) {
+        return;
+    }
+
+    AudioDevice device;
+    device.id = std::to_string(id);
+    device.name = node_description;
+
+    if (strcmp(media_class, "Audio/Source") == 0) {
+        std::cout << "Found input device: " << device.name << " (ID: " << device.id << ")\n";
+        device.isInput = true;
+        impl->inputDevices.push_back(device);
+        impl->notifyDeviceListChanged();
+    } else if (strcmp(media_class, "Audio/Sink") == 0) {
+        std::cout << "Found output device: " << device.name << " (ID: " << device.id << ")\n";
+        device.isInput = false;
+        impl->outputDevices.push_back(device);
+        impl->notifyDeviceListChanged();
+    }
+}
+
+void PipewireImpl::registry_event_global_remove(void *data, uint32_t id) {
+    if (!data) {
+        return;
+    }
+
+    PipewireImpl *impl = static_cast<PipewireImpl *>(data);
+    std::string deviceId = std::to_string(id);
+
+    // Remove from input devices
+    auto inputIt = std::remove_if(impl->inputDevices.begin(), impl->inputDevices.end(),
+        [&deviceId](const AudioDevice& device) {
+        return device.id == deviceId;
+    });
+
+    if (inputIt != impl->inputDevices.end()) {
+        std::cout << "Removed input device with ID: " << deviceId << std::endl;
+        impl->inputDevices.erase(inputIt, impl->inputDevices.end());
+        impl->notifyDeviceListChanged();
+        return;
+    }
+
+    // Remove from output devices
+    auto outputIt = std::remove_if(impl->outputDevices.begin(), impl->outputDevices.end(),
+        [&deviceId](const AudioDevice& device) {
+        return device.id == deviceId;
+    });
+
+    if (outputIt != impl->outputDevices.end()) {
+        std::cout << "Removed output device with ID: " << deviceId << std::endl;
+        impl->outputDevices.erase(outputIt, impl->outputDevices.end());
+        impl->notifyDeviceListChanged();
+    }
 }

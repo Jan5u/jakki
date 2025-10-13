@@ -1,3 +1,4 @@
+#include "audio/audio_impl.hpp"
 #include "gui.hpp"
 #include "qdebug.h"
 #include "ui_connect.h"
@@ -14,6 +15,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->treeView, &QTreeView::clicked, this, &MainWindow::onTreeViewItemClicked);
     connect(&networkManager, &Network::channelsReceived, this, &MainWindow::addChannels);
     connect(&networkManager, &Network::userJoinedChannel, this, &MainWindow::onUserJoinedChannel);
+    connect(&audioManager, &Audio::deviceListChanged, this, &MainWindow::updateAudioDeviceComboBox);
 
     model = new QStandardItemModel(this);
     model->setHorizontalHeaderLabels({"Channels"});
@@ -21,10 +23,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->treeView->setModel(model);
     ui->treeView->expandAll();
 
-    QWidget *settingsTab = new QWidget;
+    settingsTab = new QWidget;
     Ui::SettingsTab uiSettings;
     uiSettings.setupUi(settingsTab);
     ui->tabWidget->addTab(settingsTab, "Settings");
+    
+    // Initialize audio device combo boxes
+    updateAudioDeviceComboBox();
 }
 
 MainWindow::~MainWindow() {
@@ -146,6 +151,48 @@ void MainWindow::openTextChannelTab(const QString &channelName) {
         connect(ui->tabWidget, &QTabWidget::tabCloseRequested, this, &MainWindow::closeTab);
         closeConnected = true;
     }
+}
+
+void MainWindow::updateAudioDeviceComboBox() {
+    QComboBox* inputComboBox = settingsTab->findChild<QComboBox*>("InputDeviceComboBox");
+    QComboBox* outputComboBox = settingsTab->findChild<QComboBox*>("OutputDeviceComboBox");
+    
+    // Get current selections to preserve them if possible
+    QString currentInputDevice = inputComboBox->currentText();
+    QString currentOutputDevice = outputComboBox->currentText();
+    
+    // Clear existing items
+    inputComboBox->clear();
+    outputComboBox->clear();
+    
+    // Add "Default" option
+    inputComboBox->addItem("Default");
+    outputComboBox->addItem("Default");
+    
+    // Get and add input devices
+    auto inputDevices = audioManager.getInputDevices();
+    for (const auto& device : inputDevices) {
+        inputComboBox->addItem(QString::fromStdString(device.name), QString::fromStdString(device.id));
+    }
+    
+    // Get and add output devices
+    auto outputDevices = audioManager.getOutputDevices();
+    for (const auto& device : outputDevices) {
+        outputComboBox->addItem(QString::fromStdString(device.name), QString::fromStdString(device.id));
+    }
+    
+    // Try to restore previous selections
+    int inputIndex = inputComboBox->findText(currentInputDevice);
+    if (inputIndex >= 0) {
+        inputComboBox->setCurrentIndex(inputIndex);
+    }
+    
+    int outputIndex = outputComboBox->findText(currentOutputDevice);
+    if (outputIndex >= 0) {
+        outputComboBox->setCurrentIndex(outputIndex);
+    }
+    
+    qDebug() << "Updated audio devices: " << inputDevices.size() << "input," << outputDevices.size() << "output";
 }
 
 void MainWindow::closeTab(int index) {

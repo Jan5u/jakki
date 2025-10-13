@@ -9,7 +9,8 @@
 #include "pipewire_impl.hpp"
 #endif
 
-Audio::Audio(Network& network) {
+Audio::Audio(Network& network, QObject* parent)
+    : QObject(parent) {
     // Create the platform-specific implementation
 #ifdef _WIN32
     pImpl = std::make_unique<WasapiImpl>(network);
@@ -18,6 +19,11 @@ Audio::Audio(Network& network) {
     pImpl = std::make_unique<PipewireImpl>(network);
     std::cout << "Created PipeWire audio implementation" << std::endl;
 #endif
+
+    // Set up callback for device changes
+    pImpl->setDeviceChangeCallback([this]() {
+        emit deviceListChanged();
+    });
 
     // Initialize the audio system
     pImpl->initAudio();
@@ -37,4 +43,12 @@ void Audio::stopAudio() {
 
 void Audio::handleIncomingVoicePacket(const std::string& userId, const std::vector<uint8_t>& payload) {
     pImpl->handleIncomingVoicePacket(userId, payload);
+}
+
+std::vector<AudioDevice> Audio::getInputDevices() const {
+    return pImpl->getInputDevices();
+}
+
+std::vector<AudioDevice> Audio::getOutputDevices() const {
+    return pImpl->getOutputDevices();
 }

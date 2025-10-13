@@ -25,7 +25,9 @@ class MainWindow : public QMainWindow {
     Audio audioManager;
     Network networkManager;
     QStandardItemModel *model;
+    QWidget *settingsTab;
     void openTextChannelTab(const QString &channelName);
+    void updateAudioDeviceComboBox();
   
   private slots:
     void disconnect();

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QObject>
 #include <memory>
 #include <string>
 #include <vector>
@@ -8,6 +9,7 @@
 // Forward declarations
 class Network;
 class AudioImpl;
+struct AudioDevice;
 
 /**
  * Audio - Public API for cross-platform audio handling
@@ -16,10 +18,12 @@ class AudioImpl;
  * platform-specific implementation details. Depending on the platform,
  * it will internally use either PipeWire (Linux) or WASAPI (Windows).
  */
-class Audio {
+class Audio : public QObject {
+    Q_OBJECT
+
 public:
     // Constructor and destructor
-    Audio(Network& network);
+    Audio(Network& network, QObject* parent = nullptr);
     ~Audio();
     
     // Delete copy and move operations to ensure proper resource management
@@ -34,6 +38,13 @@ public:
     
     // Network audio functions
     void handleIncomingVoicePacket(const std::string& userId, const std::vector<uint8_t>& payload);
+    
+    // Device enumeration
+    std::vector<struct AudioDevice> getInputDevices() const;
+    std::vector<struct AudioDevice> getOutputDevices() const;
+
+signals:
+    void deviceListChanged();
 
 private:
     // PIMPL pattern - pointer to implementation

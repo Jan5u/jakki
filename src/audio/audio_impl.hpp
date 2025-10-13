@@ -17,6 +17,12 @@
 // Forward declaration for Network class
 class Network;
 
+struct AudioDevice {
+    std::string id;
+    std::string name;
+    bool isInput;
+};
+
 /**
  * AudioImpl - Abstract base class for platform-specific audio implementations
  * This serves as the interface that all platform-specific implementations must follow
@@ -35,6 +41,15 @@ public:
 
     // Handle incoming voice packets (common implementation can be shared)
     virtual void handleIncomingVoicePacket(const std::string& userId, const std::vector<uint8_t>& payload);
+    
+    // Device enumeration - must be implemented by platform-specific classes
+    virtual std::vector<AudioDevice> getInputDevices() const = 0;
+    virtual std::vector<AudioDevice> getOutputDevices() const = 0;
+
+    // Set callback for device list changes
+    void setDeviceChangeCallback(std::function<void()> callback) {
+        deviceChangeCallback = callback;
+    }
 
     // Helper struct for user audio streams
     struct UserStream {
@@ -43,6 +58,12 @@ public:
     };
 
 protected:
+    // Notify about device changes
+    void notifyDeviceListChanged() {
+        if (deviceChangeCallback) {
+            deviceChangeCallback();
+        }
+    }
     // Opus codec methods
     void initOpus();
     void opusCleanup();
@@ -58,4 +79,7 @@ protected:
 
     // Opus encoder
     OpusEncoder* encoder{nullptr};
+
+    // Device change callback
+    std::function<void()> deviceChangeCallback;
 };
