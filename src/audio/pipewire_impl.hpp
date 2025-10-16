@@ -4,6 +4,8 @@
 #include <pipewire/pipewire.h>
 #include <spa/param/audio/format-utils.h>
 
+class Config;
+
 /**
  * PipewireImpl - Linux-specific implementation using PipeWire
  */
@@ -21,7 +23,7 @@ struct PipewireData {
 
 class PipewireImpl : public AudioImpl {
 public:
-    explicit PipewireImpl(Network& network);
+    explicit PipewireImpl(Network& network, Config& config);
     ~PipewireImpl() override;
     
     // Implementation of AudioImpl interface
@@ -53,4 +55,5 @@ private:
     bool capturing = false;
     std::vector<AudioDevice> inputDevices;
     std::vector<AudioDevice> outputDevices;
+    Config& config;
 };

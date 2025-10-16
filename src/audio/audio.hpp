@@ -9,6 +9,7 @@
 // Forward declarations
 class Network;
 class AudioImpl;
+class Config;
 struct AudioDevice;
 
 /**
@@ -23,7 +24,7 @@ class Audio : public QObject {
 
 public:
     // Constructor and destructor
-    Audio(Network& network, QObject* parent = nullptr);
+    Audio(Network& network, Config& config, QObject* parent = nullptr);
     ~Audio();
     
     // Delete copy and move operations to ensure proper resource management

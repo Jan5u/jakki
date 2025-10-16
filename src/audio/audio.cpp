@@ -1,5 +1,6 @@
 #include "audio.hpp"
 #include "audio_impl.hpp"
+#include "../config.hpp"
 #include <iostream>
 
 // Include platform-specific implementations
@@ -9,14 +10,14 @@
 #include "pipewire_impl.hpp"
 #endif
 
-Audio::Audio(Network& network, QObject* parent)
+Audio::Audio(Network& network, Config& config, QObject* parent)
     : QObject(parent) {
     // Create the platform-specific implementation
 #ifdef _WIN32
-    pImpl = std::make_unique<WasapiImpl>(network);
+    pImpl = std::make_unique<WasapiImpl>(network, config);
     std::cout << "Created WASAPI audio implementation" << std::endl;
 #else
-    pImpl = std::make_unique<PipewireImpl>(network);
+    pImpl = std::make_unique<PipewireImpl>(network, config);
     std::cout << "Created PipeWire audio implementation" << std::endl;
 #endif
 

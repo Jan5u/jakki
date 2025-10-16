@@ -32,6 +32,8 @@ set(COMMON_SOURCES
     src/audio/audio_impl.cpp
     src/audio/audio.hpp
     src/audio/audio.cpp
+    src/config.hpp
+    src/config.cpp
 )
 if(WIN32)
     list(APPEND COMMON_SOURCES

@@ -21,6 +21,7 @@ struct AudioDevice {
     std::string id;
     std::string name;
     bool isInput;
+    uint32_t nodeId;
 };
 
 /**

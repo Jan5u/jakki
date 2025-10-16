@@ -6,10 +6,12 @@
 #include <QLabel>
 #include "network.hpp"
 #include "audio/audio.hpp"
+#include "config.hpp"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
 class MainWindow;
+class SettingsTab;
 }
 QT_END_NAMESPACE
 
@@ -22,6 +24,8 @@ class MainWindow : public QMainWindow {
 
   private:
     Ui::MainWindow *ui;
+    Ui::SettingsTab *uiSettings;
+    Config config;
     Audio audioManager;
     Network networkManager;
     QStandardItemModel *model;
@@ -39,4 +43,6 @@ class MainWindow : public QMainWindow {
     void onTreeViewItemClicked(const QModelIndex &index);
     void closeTab(int index);
     void onUserJoinedChannel(const QString& user, const QString& channel);
+    void onInputDeviceChanged(int index);
+    void onOutputDeviceChanged(int index);
 };

@@ -1,10 +1,11 @@
 #include "pipewire_impl.hpp"
 #include "../network.hpp"
+#include "../config.hpp"
 #include <iostream>
 #include <cstring>
 
-PipewireImpl::PipewireImpl(Network& network) 
-    : AudioImpl(network) {
+PipewireImpl::PipewireImpl(Network& network, Config& cfg) 
+    : AudioImpl(network), config(cfg) {
     memset(&pwdata, 0, sizeof(pwdata));
     inputDevices.clear();
     outputDevices.clear();
@@ -103,18 +104,31 @@ void PipewireImpl::initPipewire() {
         .process = on_process_playback,
     };
 
+    // Get saved devices from config
+    std::string savedInputDevice = config.getInputDevice();
+    std::string savedOutputDevice = config.getOutputDevice();
+
+    // Use saved input device if available, otherwise let PipeWire choose default
+    const char *targetInput = savedInputDevice.empty() ? nullptr : savedInputDevice.c_str();
+    const char *targetOutput = savedOutputDevice.empty() ? nullptr : savedOutputDevice.c_str();
+
+    std::cout << "Creating capture stream with target: " << (targetInput ? targetInput : "default") << std::endl;
+    std::cout << "Creating playback stream with target: " << (targetOutput ? targetOutput : "default") << std::endl;
+
     pwdata.capture_stream = pw_stream_new_simple(
         pw_main_loop_get_loop(pwdata.loop), "jakki-capture",
         pw_properties_new(PW_KEY_MEDIA_TYPE, "Audio", PW_KEY_MEDIA_CATEGORY, "Capture",
                           PW_KEY_MEDIA_ROLE, "Communication", PW_KEY_NODE_LATENCY, "20/1000",
-                          PW_KEY_NODE_RATE, "1/20",   PW_KEY_NODE_FORCE_QUANTUM, "960", nullptr),
+                          PW_KEY_NODE_RATE, "1/20", PW_KEY_NODE_FORCE_QUANTUM, "960", 
+                          PW_KEY_TARGET_OBJECT, targetInput, nullptr),
         &stream_events, this);
 
     pwdata.playback_stream = pw_stream_new_simple(
         pw_main_loop_get_loop(pwdata.loop), "jakki-playback",
         pw_properties_new(PW_KEY_MEDIA_TYPE, "Audio", PW_KEY_MEDIA_CATEGORY, "Playback",
                           PW_KEY_MEDIA_ROLE, "Communication", PW_KEY_NODE_LATENCY, "20/1000",
-                          PW_KEY_NODE_RATE, "1/20",   PW_KEY_NODE_FORCE_QUANTUM, "960", nullptr),
+                          PW_KEY_NODE_RATE, "1/20", PW_KEY_NODE_FORCE_QUANTUM, "960",
+                          PW_KEY_TARGET_OBJECT, targetOutput, nullptr),
         &stream_events_playback, this);
 
     uint8_t buffer[1024];
@@ -261,23 +275,23 @@ void PipewireImpl::registry_event_global(void *data, uint32_t id, uint32_t permi
     const char *media_class = spa_dict_lookup(props, PW_KEY_MEDIA_CLASS);
     const char *node_name = spa_dict_lookup(props, PW_KEY_NODE_NAME);
     const char *node_description = spa_dict_lookup(props, PW_KEY_NODE_DESCRIPTION);
-    const char *device_name = spa_dict_lookup(props, PW_KEY_DEVICE_NAME);
 
     if (!media_class || !node_description) {
         return;
     }
 
     AudioDevice device;
-    device.id = std::to_string(id);
+    device.id = node_name;
     device.name = node_description;
+    device.nodeId = id;
 
     if (strcmp(media_class, "Audio/Source") == 0) {
-        std::cout << "Found input device: " << device.name << " (ID: " << device.id << ")\n";
+        std::cout << "Found input device: " << device.name << " (ID: " << device.id << ", Node ID: " << id << ")\n";
         device.isInput = true;
         impl->inputDevices.push_back(device);
         impl->notifyDeviceListChanged();
     } else if (strcmp(media_class, "Audio/Sink") == 0) {
-        std::cout << "Found output device: " << device.name << " (ID: " << device.id << ")\n";
+        std::cout << "Found output device: " << device.name << " (ID: " << device.id << ", Node ID: " << id << ")\n";
         device.isInput = false;
         impl->outputDevices.push_back(device);
         impl->notifyDeviceListChanged();
@@ -290,29 +304,28 @@ void PipewireImpl::registry_event_global_remove(void *data, uint32_t id) {
     }
 
     PipewireImpl *impl = static_cast<PipewireImpl *>(data);
-    std::string deviceId = std::to_string(id);
 
-    // Remove from input devices
+    // Remove from input devices using node ID
     auto inputIt = std::remove_if(impl->inputDevices.begin(), impl->inputDevices.end(),
-        [&deviceId](const AudioDevice& device) {
-        return device.id == deviceId;
+        [id](const AudioDevice& device) {
+        return device.nodeId == id;
     });
 
     if (inputIt != impl->inputDevices.end()) {
-        std::cout << "Removed input device with ID: " << deviceId << std::endl;
+        std::cout << "Removed input device with node ID: " << id << std::endl;
         impl->inputDevices.erase(inputIt, impl->inputDevices.end());
         impl->notifyDeviceListChanged();
         return;
     }
 
-    // Remove from output devices
+    // Remove from output devices using node ID
     auto outputIt = std::remove_if(impl->outputDevices.begin(), impl->outputDevices.end(),
-        [&deviceId](const AudioDevice& device) {
-        return device.id == deviceId;
+        [id](const AudioDevice& device) {
+        return device.nodeId == id;
     });
 
     if (outputIt != impl->outputDevices.end()) {
-        std::cout << "Removed output device with ID: " << deviceId << std::endl;
+        std::cout << "Removed output device with node ID: " << id << std::endl;
         impl->outputDevices.erase(outputIt, impl->outputDevices.end());
         impl->notifyDeviceListChanged();
     }
