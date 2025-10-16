@@ -30,6 +30,7 @@ class MainWindow : public QMainWindow {
     Network networkManager;
     QStandardItemModel *model;
     QWidget *settingsTab;
+    bool isInitialDeviceSetup = true;
     void openTextChannelTab(const QString &channelName);
     void updateAudioDeviceComboBox();
   

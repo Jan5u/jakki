@@ -167,6 +167,10 @@ void MainWindow::updateAudioDeviceComboBox() {
     QString savedInputDevice = QString::fromStdString(config.getInputDevice());
     QString savedOutputDevice = QString::fromStdString(config.getOutputDevice());
     
+    // Get current index
+    int currentInputIndex = uiSettings->InputDeviceComboBox->currentIndex();
+    int currentOutputIndex = uiSettings->OutputDeviceComboBox->currentIndex();
+
     // Clear existing items
     uiSettings->InputDeviceComboBox->clear();
     uiSettings->OutputDeviceComboBox->clear();
@@ -192,6 +196,11 @@ void MainWindow::updateAudioDeviceComboBox() {
         int inputIndex = uiSettings->InputDeviceComboBox->findData(savedInputDevice);
         if (inputIndex >= 0) {
             uiSettings->InputDeviceComboBox->setCurrentIndex(inputIndex);
+            if (inputIndex != currentInputIndex) {
+                if (!isInitialDeviceSetup) {
+                    onInputDeviceChanged(inputIndex);
+                }
+            }
         }
     }
     
@@ -199,12 +208,22 @@ void MainWindow::updateAudioDeviceComboBox() {
         int outputIndex = uiSettings->OutputDeviceComboBox->findData(savedOutputDevice);
         if (outputIndex >= 0) {
             uiSettings->OutputDeviceComboBox->setCurrentIndex(outputIndex);
+            if (outputIndex != currentOutputIndex) {
+                if (!isInitialDeviceSetup) {
+                    onOutputDeviceChanged(outputIndex);
+                }
+            }
         }
     }
 
     // Re-enable signals after update is complete
     uiSettings->InputDeviceComboBox->blockSignals(false);
     uiSettings->OutputDeviceComboBox->blockSignals(false);
+
+    // Mark initial setup as complete after first run
+    if (isInitialDeviceSetup) {
+        isInitialDeviceSetup = false;
+    }
     
     qDebug() << "Updated audio devices: " << inputDevices.size() << "input," << outputDevices.size() << "output";
 }
