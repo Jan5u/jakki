@@ -53,3 +53,11 @@ std::vector<AudioDevice> Audio::getInputDevices() const {
 std::vector<AudioDevice> Audio::getOutputDevices() const {
     return pImpl->getOutputDevices();
 }
+
+void Audio::setInputDevice(const std::string& deviceId) {
+    pImpl->setInputDevice(deviceId);
+}
+
+void Audio::setOutputDevice(const std::string& deviceId) {
+    pImpl->setOutputDevice(deviceId);
+}

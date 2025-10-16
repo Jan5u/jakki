@@ -246,6 +246,9 @@ void MainWindow::onInputDeviceChanged(int index) {
     
     // Save to config
     config.setInputDevice(deviceId.toStdString());
+
+    // Apply device change to audio manager
+    audioManager.setInputDevice(deviceId.toStdString());
     
     qDebug() << "Input device changed to:" << uiSettings->InputDeviceComboBox->currentText() << "ID:" << deviceId;
 }
@@ -256,6 +259,9 @@ void MainWindow::onOutputDeviceChanged(int index) {
     
     // Save to config
     config.setOutputDevice(deviceId.toStdString());
+
+    // Apply device change to audio manager
+    audioManager.setOutputDevice(deviceId.toStdString());
     
     qDebug() << "Output device changed to:" << uiSettings->OutputDeviceComboBox->currentText() << "ID:" << deviceId;
 }

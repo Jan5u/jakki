@@ -43,6 +43,10 @@ public:
     // Device enumeration
     std::vector<struct AudioDevice> getInputDevices() const;
     std::vector<struct AudioDevice> getOutputDevices() const;
+    
+    // Device selection
+    void setInputDevice(const std::string& deviceId);
+    void setOutputDevice(const std::string& deviceId);
 
 signals:
     void deviceListChanged();

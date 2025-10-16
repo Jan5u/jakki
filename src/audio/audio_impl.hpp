@@ -46,6 +46,10 @@ public:
     // Device enumeration - must be implemented by platform-specific classes
     virtual std::vector<AudioDevice> getInputDevices() const = 0;
     virtual std::vector<AudioDevice> getOutputDevices() const = 0;
+    
+    // Device selection - must be implemented by platform-specific classes
+    virtual void setInputDevice(const std::string& deviceId) = 0;
+    virtual void setOutputDevice(const std::string& deviceId) = 0;
 
     // Set callback for device list changes
     void setDeviceChangeCallback(std::function<void()> callback) {

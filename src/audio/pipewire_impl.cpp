@@ -79,6 +79,131 @@ std::vector<AudioDevice> PipewireImpl::getOutputDevices() const {
     return outputDevices;
 }
 
+void PipewireImpl::setInputDevice(const std::string &deviceId) {
+    std::cout << "Setting input device to: " << (deviceId.empty() ? "default" : deviceId) << std::endl;
+
+    // Update input stream with new device
+    if (pwdata.loop) {
+        std::string *deviceIdCopy = new std::string(deviceId);
+
+        pw_loop_invoke(
+            pw_main_loop_get_loop(pwdata.loop),
+            [](struct spa_loop *loop, bool async, uint32_t seq, const void *data, size_t size, void *user_data) -> int {
+                PipewireImpl *impl = static_cast<PipewireImpl *>(user_data);
+                std::string *deviceIdPtr = *static_cast<std::string *const *>(data);
+                impl->updateInputDevice(*deviceIdPtr);
+                delete deviceIdPtr;
+                return 0;
+            },
+            SPA_ID_INVALID, &deviceIdCopy, sizeof(std::string *), true, this);
+    }
+}
+
+void PipewireImpl::setOutputDevice(const std::string &deviceId) {
+    std::cout << "Setting output device to: " << (deviceId.empty() ? "default" : deviceId) << std::endl;
+
+    // Update output stream with new device
+    if (pwdata.loop) {
+        std::string *deviceIdCopy = new std::string(deviceId);
+
+        pw_loop_invoke(
+            pw_main_loop_get_loop(pwdata.loop),
+            [](struct spa_loop *loop, bool async, uint32_t seq, const void *data, size_t size, void *user_data) -> int {
+                PipewireImpl *impl = static_cast<PipewireImpl *>(user_data);
+                std::string *deviceIdPtr = *static_cast<std::string *const *>(data);
+                impl->updateOutputDevice(*deviceIdPtr);
+                delete deviceIdPtr;
+                return 0;
+            },
+            SPA_ID_INVALID, &deviceIdCopy, sizeof(std::string *), true, this);
+    }
+}
+
+void PipewireImpl::updateInputDevice(const std::string &deviceId) {
+    if (!pwdata.capture_stream) {
+        std::cerr << "Capture stream not initialized" << std::endl;
+        return;
+    }
+
+    const char *targetInput = deviceId.empty() ? nullptr : deviceId.c_str();
+
+    std::cout << "Updating capture stream target to: " << (targetInput ? targetInput : "default") << std::endl;
+
+    bool wasCapturing = capturing;
+
+    pw_stream_disconnect(pwdata.capture_stream);
+
+    // Update target object property
+    struct spa_dict_item items[] = {{PW_KEY_TARGET_OBJECT, targetInput}};
+    struct spa_dict dict = SPA_DICT_INIT(items, 1);
+    pw_stream_update_properties(pwdata.capture_stream, &dict);
+
+    // Set up audio format
+    uint8_t buffer[1024];
+    struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
+    const struct spa_pod *params[1];
+
+    spa_audio_info_raw raw_info;
+    raw_info.format = SPA_AUDIO_FORMAT_F32;
+    raw_info.channels = DEFAULT_CHANNELS;
+    raw_info.rate = DEFAULT_RATE;
+
+    params[0] = spa_format_audio_raw_build(&b, SPA_PARAM_EnumFormat, &raw_info);
+
+    // Reconnect with same parameters
+    pw_stream_connect(pwdata.capture_stream, PW_DIRECTION_INPUT, PW_ID_ANY,
+                      static_cast<pw_stream_flags>(PW_STREAM_FLAG_AUTOCONNECT |
+                                                   PW_STREAM_FLAG_MAP_BUFFERS |
+                                                   PW_STREAM_FLAG_RT_PROCESS |
+                                                   (wasCapturing ? 0 : PW_STREAM_FLAG_INACTIVE)),
+                      params, 1);
+
+    std::cout << "Capture stream target updated successfully" << std::endl;
+}
+
+void PipewireImpl::updateOutputDevice(const std::string &deviceId) {
+    if (!pwdata.playback_stream) {
+        std::cerr << "Playback stream not initialized" << std::endl;
+        return;
+    }
+
+    const char *targetOutput = deviceId.empty() ? nullptr : deviceId.c_str();
+
+    std::cout << "Updating playback stream target to: " << (targetOutput ? targetOutput : "default") << std::endl;
+
+    bool wasCapturing = capturing;
+
+    // Disconnect stream
+    pw_stream_disconnect(pwdata.playback_stream);
+
+    // Update target object property
+    struct spa_dict_item items[] = {{PW_KEY_TARGET_OBJECT, targetOutput}};
+    struct spa_dict dict = SPA_DICT_INIT(items, 1);
+    pw_stream_update_properties(pwdata.playback_stream, &dict);
+
+    // Set up audio format
+    uint8_t buffer[1024];
+    struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
+    const struct spa_pod *params[1];
+
+    spa_audio_info_raw raw_info;
+    raw_info.format = SPA_AUDIO_FORMAT_F32;
+    raw_info.channels = DEFAULT_CHANNELS;
+    raw_info.rate = DEFAULT_RATE;
+
+    params[0] = spa_format_audio_raw_build(&b, SPA_PARAM_EnumFormat, &raw_info);
+
+    // Reconnect with same parameters
+    pw_stream_connect(pwdata.playback_stream, PW_DIRECTION_OUTPUT, PW_ID_ANY,
+                      static_cast<pw_stream_flags>(PW_STREAM_FLAG_AUTOCONNECT |
+                                                   PW_STREAM_FLAG_MAP_BUFFERS |
+                                                   PW_STREAM_FLAG_RT_PROCESS |
+                                                   (wasCapturing ? 0 : PW_STREAM_FLAG_INACTIVE)),
+                      params, 1);
+    
+    std::cout << "Playback stream target updated successfully" << std::endl;
+}
+
 void PipewireImpl::initPipewire() {
     pw_init(nullptr, nullptr);
 

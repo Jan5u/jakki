@@ -35,11 +35,17 @@ public:
     // Device enumeration
     std::vector<AudioDevice> getInputDevices() const override;
     std::vector<AudioDevice> getOutputDevices() const override;
+    
+    // Device selection
+    void setInputDevice(const std::string& deviceId) override;
+    void setOutputDevice(const std::string& deviceId) override;
 
 private:
     // PipeWire-specific methods
     void initPipewire();
     void setStreamsActive(bool active);
+    void updateInputDevice(const std::string& deviceId);
+    void updateOutputDevice(const std::string& deviceId);
     
     // Static callbacks for PipeWire
     static void on_process_record(void *data);
