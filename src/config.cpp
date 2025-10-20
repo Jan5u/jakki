@@ -5,13 +5,20 @@
 #include <sstream>
 
 Config::Config() {
-    const char *home = std::getenv("HOME");
-    if (!home) {
-        std::cerr << "HOME environment variable not set\n";
-        return;
+    std::filesystem::path configDir;
+    
+    const char *xdgConfigHome = std::getenv("XDG_CONFIG_HOME");
+    if (xdgConfigHome && xdgConfigHome[0] != '\0') {
+        configDir = std::filesystem::path(xdgConfigHome) / "jakki";
+    } else {
+        const char *home = std::getenv("HOME");
+        if (!home) {
+            std::cerr << "HOME environment variable not set\n";
+            return;
+        }
+        configDir = std::filesystem::path(home) / ".config" / "jakki";
     }
-
-    std::filesystem::path configDir = std::filesystem::path(home) / ".config" / "jakki";
+    
     std::filesystem::create_directories(configDir);
 
     configPath = configDir / "config.ini";
