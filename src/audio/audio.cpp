@@ -26,6 +26,11 @@ Audio::Audio(Network& network, Config& config, QObject* parent)
         emit deviceListChanged();
     });
 
+    // Set up callback for default device changes
+    pImpl->setDefaultDeviceChangeCallback([this](bool isInput) {
+        emit defaultDeviceChanged(isInput);
+    });
+
     // Initialize the audio system
     pImpl->initAudio();
 }

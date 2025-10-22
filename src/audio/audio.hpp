@@ -50,6 +50,7 @@ public:
 
 signals:
     void deviceListChanged();
+    void defaultDeviceChanged(bool isInput);
 
 private:
     // PIMPL pattern - pointer to implementation

@@ -56,6 +56,11 @@ public:
         deviceChangeCallback = callback;
     }
 
+    // Set callback for default device changes
+    void setDefaultDeviceChangeCallback(std::function<void(bool)> callback) {
+        defaultDeviceChangeCallback = callback;
+    }
+
     // Helper struct for user audio streams
     struct UserStream {
         OpusDecoder* decoder{nullptr};
@@ -67,6 +72,13 @@ protected:
     void notifyDeviceListChanged() {
         if (deviceChangeCallback) {
             deviceChangeCallback();
+        }
+    }
+
+    // Notify about default device changes
+    void notifyDefaultDeviceChanged(bool isInput) {
+        if (defaultDeviceChangeCallback) {
+            defaultDeviceChangeCallback(isInput);
         }
     }
     // Opus codec methods
@@ -87,4 +99,7 @@ protected:
 
     // Device change callback
     std::function<void()> deviceChangeCallback;
+    
+    // Default device change callback
+    std::function<void(bool)> defaultDeviceChangeCallback;
 };

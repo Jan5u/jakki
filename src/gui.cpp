@@ -16,6 +16,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(&networkManager, &Network::channelsReceived, this, &MainWindow::addChannels);
     connect(&networkManager, &Network::userJoinedChannel, this, &MainWindow::onUserJoinedChannel);
     connect(&audioManager, &Audio::deviceListChanged, this, &MainWindow::updateAudioDeviceComboBox);
+    connect(&audioManager, &Audio::defaultDeviceChanged, this, &MainWindow::onDefaultDeviceChanged);
 
     model = new QStandardItemModel(this);
     model->setHorizontalHeaderLabels({"Channels"});
@@ -32,8 +33,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     updateAudioDeviceComboBox();
 
     // Connect audio device combobox signals
-    connect(uiSettings->InputDeviceComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onInputDeviceChanged);
-    connect(uiSettings->OutputDeviceComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onOutputDeviceChanged);
+    connect(uiSettings->InputDeviceComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::setInputDevice);
+    connect(uiSettings->OutputDeviceComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::setOutputDevice);
 }
 
 MainWindow::~MainWindow() {
@@ -196,10 +197,22 @@ void MainWindow::updateAudioDeviceComboBox() {
         int inputIndex = uiSettings->InputDeviceComboBox->findData(savedInputDevice);
         if (inputIndex >= 0) {
             uiSettings->InputDeviceComboBox->setCurrentIndex(inputIndex);
+            if (isInitialDeviceSetup) {
+                currentInputDeviceId = savedInputDevice;
+            }
             if (inputIndex != currentInputIndex) {
                 if (!isInitialDeviceSetup) {
-                    onInputDeviceChanged(inputIndex);
+                    setInputDevice();
                 }
+            }
+        } else {
+            // Fallback to default audio device
+            uiSettings->InputDeviceComboBox->setCurrentIndex(0);
+            if (isInitialDeviceSetup) {
+                currentInputDeviceId = "";
+            }
+            if (!isInitialDeviceSetup) {
+                setInputDeviceWithoutSaving();
             }
         }
     }
@@ -208,10 +221,22 @@ void MainWindow::updateAudioDeviceComboBox() {
         int outputIndex = uiSettings->OutputDeviceComboBox->findData(savedOutputDevice);
         if (outputIndex >= 0) {
             uiSettings->OutputDeviceComboBox->setCurrentIndex(outputIndex);
+            if (isInitialDeviceSetup) {
+                currentOutputDeviceId = savedOutputDevice;
+            }
             if (outputIndex != currentOutputIndex) {
                 if (!isInitialDeviceSetup) {
-                    onOutputDeviceChanged(outputIndex);
+                    setOutputDevice();
                 }
+            }
+        } else {
+            // Fallback to default audio device
+            uiSettings->OutputDeviceComboBox->setCurrentIndex(0);
+            if (isInitialDeviceSetup) {
+                currentOutputDeviceId = "";
+            }
+            if (!isInitialDeviceSetup) {
+                setOutputDeviceWithoutSaving();
             }
         }
     }
@@ -259,28 +284,77 @@ void MainWindow::onUserJoinedChannel(const QString& user, const QString& channel
     channelItem->appendRow(userItem);
 }
 
-void MainWindow::onInputDeviceChanged(int index) {
-    // Get device ID from combo box data (or empty string for "Default")
+bool MainWindow::validateInputDevice() {
     QString deviceId = uiSettings->InputDeviceComboBox->currentData().toString();
-    
-    // Save to config
-    config.setInputDevice(deviceId.toStdString());
 
-    // Apply device change to audio manager
-    audioManager.setInputDevice(deviceId.toStdString());
-    
-    qDebug() << "Input device changed to:" << uiSettings->InputDeviceComboBox->currentText() << "ID:" << deviceId;
+    // Check if this is the same device as currently used
+    if (deviceId == currentInputDeviceId) {
+        qDebug() << "Input device unchanged, skipping:" << uiSettings->InputDeviceComboBox->currentText();
+        return false;
+    }
+    currentInputDeviceId = deviceId;
+    return true;
 }
 
-void MainWindow::onOutputDeviceChanged(int index) {
-    // Get device ID from combo box data (or empty string for "Default")
+bool MainWindow::validateOutputDevice() {
     QString deviceId = uiSettings->OutputDeviceComboBox->currentData().toString();
-    
-    // Save to config
-    config.setOutputDevice(deviceId.toStdString());
 
-    // Apply device change to audio manager
+    // Check if this is the same device as currently used
+    if (deviceId == currentOutputDeviceId) {
+        qDebug() << "Output device unchanged, skipping:" << uiSettings->OutputDeviceComboBox->currentText();
+        return false;
+    }
+    currentOutputDeviceId = deviceId;
+    return true;
+}
+
+void MainWindow::setInputDevice() {
+    if (!validateInputDevice()) {
+        return;
+    }
+    config.setInputDevice(currentInputDeviceId.toStdString());
+    audioManager.setInputDevice(currentInputDeviceId.toStdString());
+    qDebug() << "Input device changed to:" << uiSettings->InputDeviceComboBox->currentText() << "ID:" << currentInputDeviceId;
+}
+
+void MainWindow::setOutputDevice() {
+    if (!validateOutputDevice()) {
+        return;
+    }
+    config.setOutputDevice(currentOutputDeviceId.toStdString());
+    audioManager.setOutputDevice(currentOutputDeviceId.toStdString());
+    qDebug() << "Output device changed to:" << uiSettings->OutputDeviceComboBox->currentText() << "ID:" << currentOutputDeviceId;
+}
+
+void MainWindow::setInputDeviceWithoutSaving() {
+    if (!validateInputDevice()) {
+        return;
+    }
+    QString deviceId = uiSettings->InputDeviceComboBox->currentData().toString();
+    audioManager.setInputDevice(deviceId.toStdString());
+    qDebug() << "Input device applied (not saved) to:" << uiSettings->InputDeviceComboBox->currentText() << "ID:" << deviceId;
+}
+
+void MainWindow::setOutputDeviceWithoutSaving() {
+    if (!validateOutputDevice()) {
+        return;
+    }
+    QString deviceId = uiSettings->OutputDeviceComboBox->currentData().toString();
     audioManager.setOutputDevice(deviceId.toStdString());
-    
-    qDebug() << "Output device changed to:" << uiSettings->OutputDeviceComboBox->currentText() << "ID:" << deviceId;
+    qDebug() << "Output device applied (not saved) to:" << uiSettings->OutputDeviceComboBox->currentText() << "ID:" << deviceId;
+}
+
+void MainWindow::onDefaultDeviceChanged(bool isInput) {
+    qDebug() << "Default device changed:" << (isInput ? "Input" : "Output");
+    if (isInput) {
+        if (uiSettings->InputDeviceComboBox->currentIndex() == 0) {
+            qDebug() << "Auto-switching to new default input device";
+            audioManager.setInputDevice("");
+        }
+    } else {
+        if (uiSettings->OutputDeviceComboBox->currentIndex() == 0) {
+            qDebug() << "Auto-switching to new default output device";
+            audioManager.setOutputDevice("");
+        }
+    }
 }

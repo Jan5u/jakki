@@ -31,8 +31,12 @@ class MainWindow : public QMainWindow {
     QStandardItemModel *model;
     QWidget *settingsTab;
     bool isInitialDeviceSetup = true;
+    QString currentInputDeviceId;
+    QString currentOutputDeviceId;
     void openTextChannelTab(const QString &channelName);
     void updateAudioDeviceComboBox();
+    bool validateInputDevice();
+    bool validateOutputDevice();
   
   private slots:
     void disconnect();
@@ -44,6 +48,9 @@ class MainWindow : public QMainWindow {
     void onTreeViewItemClicked(const QModelIndex &index);
     void closeTab(int index);
     void onUserJoinedChannel(const QString& user, const QString& channel);
-    void onInputDeviceChanged(int index);
-    void onOutputDeviceChanged(int index);
+    void setInputDevice();
+    void setOutputDevice();
+    void setInputDeviceWithoutSaving();
+    void setOutputDeviceWithoutSaving();
+    void onDefaultDeviceChanged(bool isInput);
 };
