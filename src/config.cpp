@@ -7,6 +7,15 @@
 Config::Config() {
     std::filesystem::path configDir;
     
+#ifdef _WIN32
+    const char *appData = std::getenv("APPDATA");
+    if (appData && appData[0] != '\0') {
+        configDir = std::filesystem::path(appData) / "jakki";
+    } else {
+        std::cerr << "APPDATA environment variable not set" << std::endl;
+        return;
+    }
+#else
     const char *xdgConfigHome = std::getenv("XDG_CONFIG_HOME");
     if (xdgConfigHome && xdgConfigHome[0] != '\0') {
         configDir = std::filesystem::path(xdgConfigHome) / "jakki";
@@ -18,6 +27,7 @@ Config::Config() {
         }
         configDir = std::filesystem::path(home) / ".config" / "jakki";
     }
+#endif
     
     std::filesystem::create_directories(configDir);
 
@@ -32,13 +42,13 @@ Config::Config() {
 
 void Config::load() {
     if (!std::filesystem::exists(configPath)) {
-        std::cout << "Config file not found: " << configPath << "\n";
+        std::cout << "Config file not found: " << configPath << std::endl;
         return;
     }
 
     std::ifstream file(configPath);
     if (!file.is_open()) {
-        std::cerr << "Failed to open config file: " << configPath << "\n";
+        std::cerr << "Failed to open config file: " << configPath << std::endl;
         return;
     }
 
@@ -72,13 +82,13 @@ void Config::load() {
         }
     }
 
-    std::cout << "Config loaded from: " << configPath << "\n";
+    std::cout << "Config loaded from: " << configPath << std::endl;
 }
 
 void Config::save() {
     std::ofstream file(configPath);
     if (!file.is_open()) {
-        std::cerr << "Failed to save config file: " << configPath << "\n";
+        std::cerr << "Failed to save config file: " << configPath << std::endl;
         return;
     }
 
@@ -92,7 +102,7 @@ void Config::save() {
 
     file.close();
 
-    std::cout << "Config saved to: " << configPath << "\n";
+    std::cout << "Config saved to: " << configPath << std::endl;
 }
 
 std::string Config::getInputDevice() const {
@@ -126,19 +136,19 @@ std::string Config::getOutputDevice() const {
 void Config::setInputDevice(const std::string &deviceId) {
     data["Audio"]["InputDevice"] = deviceId;
     save();
-    std::cout << "Input device set to: " << deviceId << "\n";
+    std::cout << "Input device set to: " << deviceId << std::endl;
 }
 
 void Config::setOutputDevice(const std::string &deviceId) {
     data["Audio"]["OutputDevice"] = deviceId;
     save();
-    std::cout << "Output device set to: " << deviceId << "\n";
+    std::cout << "Output device set to: " << deviceId << std::endl;
 }
 
 void Config::createDefaultConfig() {
     std::ofstream file(configPath);
     if (!file.is_open()) {
-        std::cerr << "Failed to create config file: " << configPath << "\n";
+        std::cerr << "Failed to create config file: " << configPath << std::endl;
         return;
     }
 
@@ -149,7 +159,7 @@ void Config::createDefaultConfig() {
 
     file.close();
 
-    std::cout << "Created default config file: " << configPath << "\n";
+    std::cout << "Created default config file: " << configPath << std::endl;
 }
 
 std::string Config::trim(const std::string &str) const {
