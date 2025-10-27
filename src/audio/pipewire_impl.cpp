@@ -1,8 +1,6 @@
 #include "pipewire_impl.hpp"
 #include "../network.hpp"
 #include "../config.hpp"
-#include <iostream>
-#include <cstring>
 
 PipewireImpl::PipewireImpl(Network& network, Config& cfg) 
     : AudioImpl(network), config(cfg) {
@@ -204,6 +202,78 @@ void PipewireImpl::updateOutputDevice(const std::string &deviceId) {
     std::cout << "Playback stream target updated successfully" << std::endl;
 }
 
+void PipewireImpl::setVolume(bool isInput, float volume) {
+    if (!pwdata.loop) {
+        std::cerr << "PipeWire not initialized" << std::endl;
+        return;
+    }
+    volume = std::max(0.0f, std::min(1.0f, volume));
+    std::cout << "Setting volume for " << (isInput ? "input" : "output") << " stream to " << volume << std::endl;
+    struct VolumeData {
+        bool isInput;
+        float volume;
+    };
+    VolumeData volumeData{isInput, volume};
+    pw_loop_invoke(
+        pw_main_loop_get_loop(pwdata.loop),
+        [](struct spa_loop *loop, bool async, uint32_t seq, const void *data, size_t size, void *user_data) -> int {
+            PipewireImpl *impl = static_cast<PipewireImpl *>(user_data);
+            const VolumeData *vdata = static_cast<const VolumeData *>(data);
+
+            struct pw_stream *stream = vdata->isInput ? impl->pwdata.capture_stream : impl->pwdata.playback_stream;
+            if (!stream) {
+                std::cerr << "Stream not initialized" << std::endl;
+                return 0;
+            }
+            uint8_t buffer[1024];
+            struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
+
+            float cubicVolume = vdata->volume * vdata->volume * vdata->volume;
+
+            // Set volumes for each channel
+            float volumes[SPA_AUDIO_MAX_CHANNELS];
+            for (int i = 0; i < SPA_AUDIO_MAX_CHANNELS; i++) {
+                volumes[i] = cubicVolume;
+            }
+
+            const struct spa_pod *param = static_cast<const struct spa_pod *>(spa_pod_builder_add_object(
+                &b, SPA_TYPE_OBJECT_Props, SPA_PARAM_Props, SPA_PROP_channelVolumes,
+                SPA_POD_Array(sizeof(float), SPA_TYPE_Float, DEFAULT_CHANNELS, volumes), SPA_PROP_mute, SPA_POD_Bool(false)));
+
+            pw_stream_set_param(stream, SPA_PARAM_Props, param);
+
+            std::cout << "Volume parameter set successfully (linear: " << vdata->volume << ", cubic: " << cubicVolume << ")" << std::endl;
+
+            return 0;
+        },
+        SPA_ID_INVALID, &volumeData, sizeof(VolumeData), true, this);
+
+    notifyVolumeChanged(isInput, volume);
+}
+
+float PipewireImpl::getVolume(bool isInput) const {
+    if (!pwdata.loop) {
+        std::cerr << "PipeWire not initialized" << std::endl;
+        return 1.0f;
+    }
+    struct pw_stream *stream = isInput ? pwdata.capture_stream : pwdata.playback_stream;
+    if (!stream) {
+        std::cerr << "Stream not initialized" << std::endl;
+        return 1.0f;
+    }
+    const struct pw_stream_control *control = pw_stream_get_control(stream, SPA_PROP_channelVolumes);
+    if (!control || !control->values) {
+        return 1.0f;
+    }
+    if (control->n_values > 0) {
+        float cubicVolume = control->values[0];
+        // Convert from cubic to linear
+        float linearVolume = std::cbrt(cubicVolume);
+        return std::max(0.0f, std::min(1.0f, linearVolume));
+    }
+    return 1.0f;
+}
+
 void PipewireImpl::initPipewire() {
     pw_init(nullptr, nullptr);
 
@@ -220,12 +290,13 @@ void PipewireImpl::initPipewire() {
 
     pw_stream_events stream_events = {
         .version = PW_VERSION_STREAM_EVENTS,
-        .param_changed = on_stream_param_changed,
+        .param_changed = on_stream_param_changed_capture,
         .process = on_process_record,
     };
 
     pw_stream_events stream_events_playback = {
         .version = PW_VERSION_STREAM_EVENTS,
+        .param_changed = on_stream_param_changed_playback,
         .process = on_process_playback,
     };
 
@@ -370,24 +441,87 @@ void PipewireImpl::on_process_playback(void *userdata) {
     pw_stream_queue_buffer(data->playback_stream, b);
 }
 
-void PipewireImpl::on_stream_param_changed(void *_data, uint32_t id, const spa_pod *param) {
+void PipewireImpl::on_stream_param_changed_capture(void *_data, uint32_t id, const spa_pod *param) {
     PipewireImpl *audio = static_cast<PipewireImpl *>(_data);
     PipewireData *data = &audio->pwdata;
 
-    if (param == NULL || id != SPA_PARAM_Format)
+    if (param == NULL) {
         return;
-        
-    if (spa_format_parse(param, &data->format.media_type, &data->format.media_subtype) < 0)
-        return;
-        
-    if (data->format.media_type != SPA_MEDIA_TYPE_audio ||
-        data->format.media_subtype != SPA_MEDIA_SUBTYPE_raw)
-        return;
+    }
 
-    spa_format_audio_raw_parse(param, &data->format.info.raw);
+    // Handle Format changes
+    if (id == SPA_PARAM_Format) {
+        if (spa_format_parse(param, &data->format.media_type, &data->format.media_subtype) < 0)
+            return;
 
-    std::cout << "Capturing rate: " << data->format.info.raw.rate
-              << " channels: " << data->format.info.raw.channels << std::endl;
+        if (data->format.media_type != SPA_MEDIA_TYPE_audio || data->format.media_subtype != SPA_MEDIA_SUBTYPE_raw)
+            return;
+
+        spa_format_audio_raw_parse(param, &data->format.info.raw);
+
+        std::cout << "Capture stream rate: " << data->format.info.raw.rate << " channels: " << data->format.info.raw.channels << std::endl;
+    }
+
+    // Handle Props changes
+    if (id == SPA_PARAM_Props) {
+        struct spa_pod_prop *prop;
+        struct spa_pod_object *obj = (struct spa_pod_object *)param;
+
+        SPA_POD_OBJECT_FOREACH(obj, prop) {
+            if (prop->key == SPA_PROP_channelVolumes) {
+                std::cout << "Detected channelVolumes property change (capture)" << std::endl;
+
+                // Extract volume values
+                if (spa_pod_is_array(&prop->value)) {
+                    struct spa_pod_array *arr = (struct spa_pod_array *)&prop->value;
+                    uint32_t n_values = SPA_POD_ARRAY_N_VALUES(arr);
+                    if (arr->body.child.size == sizeof(float) && n_values > 0) {
+                        float *volumes = (float *)SPA_MEMBER(&arr->body, sizeof(struct spa_pod_array_body), void);
+                        float cubicVolume = volumes[0];
+                        float linearVolume = std::cbrt(cubicVolume);
+                        std::cout << "Capture volume changed (cubic: " << cubicVolume << ", linear: " << linearVolume << ")" << std::endl;
+                        audio->notifyVolumeChanged(true, linearVolume);
+                    }
+                }
+            }
+        }
+    }
+}
+
+void PipewireImpl::on_stream_param_changed_playback(void *_data, uint32_t id, const spa_pod *param) {
+    PipewireImpl *audio = static_cast<PipewireImpl *>(_data);
+
+    if (param == NULL) {
+        return;
+    }
+
+    // Handle Format changes
+    if (id == SPA_PARAM_Format) {
+        std::cout << "Playback stream format changed" << std::endl;
+    }
+
+    // Handle Props changes
+    if (id == SPA_PARAM_Props) {
+        struct spa_pod_prop *prop;
+        struct spa_pod_object *obj = (struct spa_pod_object *)param;
+
+        SPA_POD_OBJECT_FOREACH(obj, prop) {
+            if (prop->key == SPA_PROP_channelVolumes) {
+                std::cout << "Detected channelVolumes property change (playback)" << std::endl;
+                if (spa_pod_is_array(&prop->value)) {
+                    struct spa_pod_array *arr = (struct spa_pod_array *)&prop->value;
+                    uint32_t n_values = SPA_POD_ARRAY_N_VALUES(arr);
+                    if (arr->body.child.size == sizeof(float) && n_values > 0) {
+                        float *volumes = (float *)SPA_MEMBER(&arr->body, sizeof(struct spa_pod_array_body), void);
+                        float cubicVolume = volumes[0];
+                        float linearVolume = std::cbrt(cubicVolume);
+                        std::cout << "Playback volume changed (cubic: " << cubicVolume << ", linear: " << linearVolume << ")" << std::endl;
+                        audio->notifyVolumeChanged(false, linearVolume);
+                    }
+                }
+            }
+        }
+    }
 }
 
 void PipewireImpl::registry_event_global(void *data, uint32_t id, uint32_t permissions, const char *type, uint32_t version, const struct spa_dict *props) {

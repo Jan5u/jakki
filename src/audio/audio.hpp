@@ -48,9 +48,14 @@ public:
     void setInputDevice(const std::string& deviceId);
     void setOutputDevice(const std::string& deviceId);
 
+    // Volume control
+    void setVolume(bool isInput, float volume);
+    float getVolume(bool isInput) const;
+
 signals:
     void deviceListChanged();
     void defaultDeviceChanged(bool isInput);
+    void volumeChanged(bool isInput, float volume);
 
 private:
     // PIMPL pattern - pointer to implementation

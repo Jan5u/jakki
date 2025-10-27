@@ -17,6 +17,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(&networkManager, &Network::userJoinedChannel, this, &MainWindow::onUserJoinedChannel);
     connect(&audioManager, &Audio::deviceListChanged, this, &MainWindow::updateAudioDeviceComboBox);
     connect(&audioManager, &Audio::defaultDeviceChanged, this, &MainWindow::onDefaultDeviceChanged);
+    connect(&audioManager, &Audio::volumeChanged, this, &MainWindow::onVolumeChanged);
 
     model = new QStandardItemModel(this);
     model->setHorizontalHeaderLabels({"Channels"});
@@ -35,6 +36,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // Connect audio device combobox signals
     connect(uiSettings->InputDeviceComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::setInputDevice);
     connect(uiSettings->OutputDeviceComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::setOutputDevice);
+
+    // Initialize volume sliders with current volumes from audio manager
+    float inputVolume = audioManager.getVolume(true);
+    float outputVolume = audioManager.getVolume(false);
+    uiSettings->captureVolumeSlider->setValue(static_cast<int>(inputVolume * 100));
+    uiSettings->playbackVolumeSlider->setValue(static_cast<int>(outputVolume * 100));
+
+    // Connect volume slider signals
+    connect(uiSettings->playbackVolumeSlider, &QSlider::valueChanged, this, &MainWindow::onPlaybackVolumeChanged);
+    connect(uiSettings->captureVolumeSlider, &QSlider::valueChanged, this, &MainWindow::onCaptureVolumeChanged);
 }
 
 MainWindow::~MainWindow() {
@@ -356,5 +367,32 @@ void MainWindow::onDefaultDeviceChanged(bool isInput) {
             qDebug() << "Auto-switching to new default output device";
             audioManager.setOutputDevice("");
         }
+    }
+}
+
+void MainWindow::onPlaybackVolumeChanged(int value) {
+    float volume = value / 100.0f;
+    qDebug() << "Playback volume changed to:" << value << "%" << "(" << volume << ")";
+    audioManager.setVolume(false, volume);
+}
+
+void MainWindow::onCaptureVolumeChanged(int value) {
+    float volume = value / 100.0f;
+    qDebug() << "Capture volume changed to:" << value << "%" << "(" << volume << ")";
+    audioManager.setVolume(true, volume);
+}
+
+void MainWindow::onVolumeChanged(bool isInput, float volume) {
+    int sliderValue = static_cast<int>(volume * 100);
+    qDebug() << "Volume change event received for" << (isInput ? "input" : "output") << "- setting slider to:" << sliderValue;
+
+    if (isInput) {
+        uiSettings->captureVolumeSlider->blockSignals(true);
+        uiSettings->captureVolumeSlider->setValue(sliderValue);
+        uiSettings->captureVolumeSlider->blockSignals(false);
+    } else {
+        uiSettings->playbackVolumeSlider->blockSignals(true);
+        uiSettings->playbackVolumeSlider->setValue(sliderValue);
+        uiSettings->playbackVolumeSlider->blockSignals(false);
     }
 }

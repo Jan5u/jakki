@@ -31,6 +31,11 @@ Audio::Audio(Network& network, Config& config, QObject* parent)
         emit defaultDeviceChanged(isInput);
     });
 
+    // Set up callback for volume changes
+    pImpl->setVolumeChangeCallback([this](bool isInput, float volume) {
+        emit volumeChanged(isInput, volume);
+    });
+
     // Initialize the audio system
     pImpl->initAudio();
 }
@@ -65,4 +70,12 @@ void Audio::setInputDevice(const std::string& deviceId) {
 
 void Audio::setOutputDevice(const std::string& deviceId) {
     pImpl->setOutputDevice(deviceId);
+}
+
+void Audio::setVolume(bool isInput, float volume) {
+    pImpl->setVolume(isInput, volume);
+}
+
+float Audio::getVolume(bool isInput) const {
+    return pImpl->getVolume(isInput);
 }

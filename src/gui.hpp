@@ -53,4 +53,7 @@ class MainWindow : public QMainWindow {
     void setInputDeviceWithoutSaving();
     void setOutputDeviceWithoutSaving();
     void onDefaultDeviceChanged(bool isInput);
+    void onPlaybackVolumeChanged(int value);
+    void onCaptureVolumeChanged(int value);
+    void onVolumeChanged(bool isInput, float volume);
 };

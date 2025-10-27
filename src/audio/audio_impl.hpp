@@ -51,6 +51,10 @@ public:
     virtual void setInputDevice(const std::string& deviceId) = 0;
     virtual void setOutputDevice(const std::string& deviceId) = 0;
 
+    // Volume control - must be implemented by platform-specific classes
+    virtual void setVolume(bool isInput, float volume) = 0;
+    virtual float getVolume(bool isInput) const = 0;
+
     // Set callback for device list changes
     void setDeviceChangeCallback(std::function<void()> callback) {
         deviceChangeCallback = callback;
@@ -59,6 +63,11 @@ public:
     // Set callback for default device changes
     void setDefaultDeviceChangeCallback(std::function<void(bool)> callback) {
         defaultDeviceChangeCallback = callback;
+    }
+
+    // Set callback for volume changes
+    void setVolumeChangeCallback(std::function<void(bool, float)> callback) {
+        volumeChangeCallback = callback;
     }
 
     // Helper struct for user audio streams
@@ -81,6 +90,14 @@ protected:
             defaultDeviceChangeCallback(isInput);
         }
     }
+
+    // Notify about volume changes
+    void notifyVolumeChanged(bool isInput, float volume) {
+        if (volumeChangeCallback) {
+            volumeChangeCallback(isInput, volume);
+        }
+    }
+
     // Opus codec methods
     void initOpus();
     void opusCleanup();
@@ -102,4 +119,7 @@ protected:
     
     // Default device change callback
     std::function<void(bool)> defaultDeviceChangeCallback;
+    
+    // Volume change callback
+    std::function<void(bool, float)> volumeChangeCallback;
 };
