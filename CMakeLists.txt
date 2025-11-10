@@ -3,6 +3,8 @@ project(jakki VERSION 0.2 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(CMAKE_AUTORCC ON)
+
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
@@ -47,7 +49,7 @@ else()
     )
 endif()
 
-qt_add_executable(jakki ${COMMON_SOURCES})
+qt_add_executable(jakki ui/jakki.qrc ${COMMON_SOURCES})
 qt_add_ui(jakki SOURCES ui/main.ui ui/connect.ui ui/textchannel.ui ui/settings.ui)
 
 target_link_libraries(jakki PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets OpenSSL::SSL OpenSSL::Crypto nlohmann_json::nlohmann_json Threads::Threads)

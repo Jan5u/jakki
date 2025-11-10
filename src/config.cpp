@@ -1,8 +1,4 @@
 #include "config.hpp"
-#include <cstdlib>
-#include <fstream>
-#include <iostream>
-#include <sstream>
 
 Config::Config() {
     std::filesystem::path configDir;
@@ -145,6 +141,26 @@ void Config::setOutputDevice(const std::string &deviceId) {
     std::cout << "Output device set to: " << deviceId << std::endl;
 }
 
+std::string Config::getTheme() const {
+    auto sectionIt = data.find("Appearance");
+    if (sectionIt == data.end()) {
+        return "Default";
+    }
+
+    auto keyIt = sectionIt->second.find("Theme");
+    if (keyIt == sectionIt->second.end()) {
+        return "Default";
+    }
+
+    return keyIt->second;
+}
+
+void Config::setTheme(const std::string &theme) {
+    data["Appearance"]["Theme"] = theme;
+    save();
+    std::cout << "Theme set to: " << theme << std::endl;
+}
+
 void Config::createDefaultConfig() {
     std::ofstream file(configPath);
     if (!file.is_open()) {
@@ -155,6 +171,9 @@ void Config::createDefaultConfig() {
     file << "[Audio]\n";
     file << "InputDevice=\n";
     file << "OutputDevice=\n";
+    file << "\n";
+    file << "[Appearance]\n";
+    file << "Theme=Default\n";
     file << "\n";
 
     file.close();

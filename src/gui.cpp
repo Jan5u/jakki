@@ -1,6 +1,5 @@
 #include "audio/audio_impl.hpp"
 #include "gui.hpp"
-#include "qdebug.h"
 #include "ui_connect.h"
 #include "ui_main.h"
 #include "ui_textchannel.h"
@@ -46,6 +45,33 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     // Connect volume slider signals
     connect(uiSettings->playbackVolumeSlider, &QSlider::valueChanged, this, &MainWindow::onPlaybackVolumeChanged);
     connect(uiSettings->captureVolumeSlider, &QSlider::valueChanged, this, &MainWindow::onCaptureVolumeChanged);
+
+    uiSettings->StyleSelectComboBox->clear();
+    QDirIterator it(":/styles", QStringList() << "*.qss", QDir::Files);
+    while (it.hasNext()) {
+        QString filePath = it.next();
+        QFileInfo fileInfo(filePath);
+        QString themeName = fileInfo.baseName();
+        if (!themeName.isEmpty()) {
+            themeName[0] = themeName[0].toUpper();
+        }
+        uiSettings->StyleSelectComboBox->addItem(themeName, filePath);
+    }
+    QStringList availableStyles = QStyleFactory::keys();
+    for (const QString &style : availableStyles) {
+        uiSettings->StyleSelectComboBox->addItem(style);
+    }
+    
+    // Load saved theme from config
+    QString savedTheme = QString::fromStdString(config.getTheme());
+    int themeIndex = uiSettings->StyleSelectComboBox->findText(savedTheme, Qt::MatchFixedString);
+    if (themeIndex >= 0) {
+        uiSettings->StyleSelectComboBox->setCurrentIndex(themeIndex);
+    } else {
+        uiSettings->StyleSelectComboBox->setCurrentIndex(0);
+    }
+    onStyleChanged(uiSettings->StyleSelectComboBox->currentIndex());
+    connect(uiSettings->StyleSelectComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onStyleChanged);
 }
 
 MainWindow::~MainWindow() {
@@ -394,5 +420,26 @@ void MainWindow::onVolumeChanged(bool isInput, float volume) {
         uiSettings->playbackVolumeSlider->blockSignals(true);
         uiSettings->playbackVolumeSlider->setValue(sliderValue);
         uiSettings->playbackVolumeSlider->blockSignals(false);
+    }
+}
+
+void MainWindow::onStyleChanged(int index) {
+    QString styleName = uiSettings->StyleSelectComboBox->itemText(index);
+    QString styleData = uiSettings->StyleSelectComboBox->itemData(index).toString();
+    qDebug() << "Changing style to:" << styleName;
+    config.setTheme(styleName.toStdString());
+    if (!styleData.isEmpty() && styleData.startsWith(":/styles/")) {
+        QFile styleFile(styleData);
+        if (styleFile.open(QFile::ReadOnly)) {
+            QString styleSheet = QLatin1String(styleFile.readAll());
+            qApp->setStyleSheet(styleSheet);
+            styleFile.close();
+        } else {
+            qDebug() << "Failed to load custom stylesheet:" << styleData;
+            qApp->setStyleSheet("");
+        }
+    } else {
+        qApp->setStyleSheet("");
+        QApplication::setStyle(QStyleFactory::create(styleName));
     }
 }

@@ -1,22 +1,27 @@
 #pragma once
 
-#include <QMainWindow>
-#include <QStandardItemModel>
-#include <QWidgetAction>
-#include <QLabel>
-#include "network.hpp"
 #include "audio/audio.hpp"
 #include "config.hpp"
+#include "network.hpp"
+#include <QDebug>
+#include <QDirIterator>
+#include <QFile>
+#include <QFileInfo>
+#include <QLabel>
+#include <QMainWindow>
+#include <QStandardItemModel>
+#include <QStyleFactory>
+#include <QWidgetAction>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
 class MainWindow;
 class SettingsTab;
-}
+} // namespace Ui
 QT_END_NAMESPACE
 
 class MainWindow : public QMainWindow {
-  Q_OBJECT
+    Q_OBJECT
 
   public:
     MainWindow(QWidget *parent = nullptr);
@@ -37,17 +42,17 @@ class MainWindow : public QMainWindow {
     void updateAudioDeviceComboBox();
     bool validateInputDevice();
     bool validateOutputDevice();
-  
+
   private slots:
     void disconnect();
     void showConnectDialog();
     void showContextMenu(const QPoint &pos);
     void sendMessage();
     void sendMessage(const QString &channelName);
-    void addChannels(const QStringList& channels);
+    void addChannels(const QStringList &channels);
     void onTreeViewItemClicked(const QModelIndex &index);
     void closeTab(int index);
-    void onUserJoinedChannel(const QString& user, const QString& channel);
+    void onUserJoinedChannel(const QString &user, const QString &channel);
     void setInputDevice();
     void setOutputDevice();
     void setInputDeviceWithoutSaving();
@@ -56,4 +61,5 @@ class MainWindow : public QMainWindow {
     void onPlaybackVolumeChanged(int value);
     void onCaptureVolumeChanged(int value);
     void onVolumeChanged(bool isInput, float volume);
+    void onStyleChanged(int index);
 };
