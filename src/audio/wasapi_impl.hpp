@@ -10,6 +10,7 @@
 #include <mmdeviceapi.h>
 #include <audioclient.h>
 #include <functiondiscoverykeys.h>
+#include <audiopolicy.h>
 
 #define REFTIMES_PER_SEC 10000000
 
@@ -80,10 +81,18 @@ public:
     void setInputDevice(const std::string& deviceId) override;
     void setOutputDevice(const std::string& deviceId) override;
 
+    // Volume control
+    void setVolume(bool isInput, float volume) override;
+    float getVolume(bool isInput) const override;
+
 private:
-    void startPlayback();
+    void startCaptureLoop();
+    void startPlaybackLoop();
     void playbackLoop();
     void captureLoop();
+    void initializePlayback();
+    void initializeCapture();
+    void setCaptureVolume(float volume);
     void createInstance();
     void enumerateAudioDevices();
     void printEndpointProperties(IMMDevice *Device);
@@ -101,8 +110,11 @@ private:
     IAudioClient *pRenderClient = nullptr;
     IAudioCaptureClient *pCaptureService = nullptr;
     IAudioRenderClient *pRenderService = nullptr;
+    ISimpleAudioVolume *pCaptureVolume = nullptr;
+    ISimpleAudioVolume *pRenderVolume = nullptr;
     WAVEFORMATEX *pwfx = NULL;
     WAVEFORMATEX *pb_pwfx = NULL;
+    WAVEFORMATEXTENSIBLE pb_modifiedFormat = {0};
     std::jthread audioPlaybackThread;
     std::jthread audioCaptureThread;
     REFERENCE_TIME hnsRequestedDuration = REFTIMES_PER_SEC;
@@ -111,6 +123,9 @@ private:
     std::vector<float> playbackBuffer;
     std::vector<float> audioBuffer;
     const size_t OPUS_FRAME_SAMPLES = 960 * 2; // 960 samples per channel * 2 channels
+
+    // Volume control
+    float captureVolume = 1.0f;
 
     Config& config;
 

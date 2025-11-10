@@ -95,11 +95,21 @@ void WasapiImpl::initAudio() {
     createInstance();
     enumerateAudioDevices();
     selectInitialAudioDevices();
+    initializeCapture();
+    initializePlayback();
 }
 
 void WasapiImpl::startCapture() {
+    startCaptureLoop();
+    startPlaybackLoop();
+}
+
+void WasapiImpl::startCaptureLoop() {
     audioCaptureThread = std::jthread([this] { captureLoop(); });
-    startPlayback();
+}
+
+void WasapiImpl::startPlaybackLoop() {
+    audioPlaybackThread = std::jthread([this] { playbackLoop(); });
 }
 
 void WasapiImpl::setInputDevice(const std::string &deviceId) {
@@ -168,6 +178,11 @@ void WasapiImpl::setInputDevice(const std::string &deviceId) {
         pCaptureService = nullptr;
         std::cout << "Released pCaptureService" << std::endl;
     }
+    if (pCaptureVolume) {
+        pCaptureVolume->Release();
+        pCaptureVolume = nullptr;
+        std::cout << "Released pCaptureVolume" << std::endl;
+    }
     if (pCaptureClient) {
         pCaptureClient->Release();
         pCaptureClient = nullptr;
@@ -187,12 +202,13 @@ void WasapiImpl::setInputDevice(const std::string &deviceId) {
     // If device ID is empty, select default device
     if (deviceId.empty()) {
         selectDefaultCaptureDevice();
+        initializeCapture();
 
         // Restart capture if it was running
         if (wasCapturing && pCaptureDevice) {
             std::cout << "Restarting capture with default device" << std::endl;
             audioBuffer.clear();
-            audioCaptureThread = std::jthread([this] { captureLoop(); });
+            startCaptureLoop();
         }
         return;
     }
@@ -206,11 +222,12 @@ void WasapiImpl::setInputDevice(const std::string &deviceId) {
     HRESULT hr = pEnumerator->GetDevice(wideDeviceId.c_str(), &pCaptureDevice);
     if (SUCCEEDED(hr)) {
         std::cout << "Input device set successfully: " << deviceId << std::endl;
+        initializeCapture();
         // Restart capture if it was running
         if (wasCapturing && pCaptureDevice) {
             std::cout << "Restarting capture with new device" << std::endl;
             audioBuffer.clear();
-            audioCaptureThread = std::jthread([this] { captureLoop(); });
+            startCaptureLoop();
         }
     } else {
         std::cerr << "Failed to set input device. HRESULT: 0x" << std::hex << hr << std::dec << std::endl;
@@ -282,6 +299,11 @@ void WasapiImpl::setOutputDevice(const std::string &deviceId) {
         pRenderService = nullptr;
         std::cout << "Released pRenderService" << std::endl;
     }
+    if (pRenderVolume) {
+        pRenderVolume->Release();
+        pRenderVolume = nullptr;
+        std::cout << "Released pRenderVolume" << std::endl;
+    }
     if (pRenderClient) {
         pRenderClient->Release();
         pRenderClient = nullptr;
@@ -301,12 +323,12 @@ void WasapiImpl::setOutputDevice(const std::string &deviceId) {
     // If device ID is empty, select default device
     if (deviceId.empty()) {
         selectDefaultRenderDevice();
-
+        initializePlayback();
         // Restart playback if it was running
         if (wasPlaying && pPlaybackDevice) {
             std::cout << "Restarting playback with default device" << std::endl;
             playbackBuffer.clear();
-            audioPlaybackThread = std::jthread([this] { playbackLoop(); });
+            startPlaybackLoop();
         }
         return;
     }
@@ -320,62 +342,86 @@ void WasapiImpl::setOutputDevice(const std::string &deviceId) {
     HRESULT hr = pEnumerator->GetDevice(wideDeviceId.c_str(), &pPlaybackDevice);
     if (SUCCEEDED(hr)) {
         std::cout << "Output device set successfully: " << deviceId << std::endl;
+        initializePlayback();
         // Restart playback if it was running
         if (wasPlaying && pPlaybackDevice) {
             std::cout << "Restarting playback with new device" << std::endl;
             playbackBuffer.clear();
-            audioPlaybackThread = std::jthread([this] { playbackLoop(); });
+            startPlaybackLoop();
         }
     } else {
         std::cerr << "Failed to set output device. HRESULT: 0x" << std::hex << hr << std::dec << std::endl;
     }
 }
 
-void WasapiImpl::startPlayback() {
-    audioPlaybackThread = std::jthread([this] { playbackLoop(); });
+void WasapiImpl::initializePlayback() {
+    if (!pPlaybackDevice) {
+        std::cerr << "No playback device available" << std::endl;
+    }
+    HRESULT hr = pPlaybackDevice->Activate(IID_IAudioClient, CLSCTX_ALL, NULL, (void**)&pRenderClient);
+    if (FAILED(hr)) {
+        std::cerr << "Failed to activate playback audio client. HRESULT: 0x" << std::hex << hr << std::dec << std::endl;
+    }
+    hr = pRenderClient->GetMixFormat(&pb_pwfx);
+    if (FAILED(hr)) {
+        std::cerr << "Failed to get playback mix format. HRESULT: 0x" << std::hex << hr << std::dec << std::endl;
+    }
+    WAVEFORMATEX* pModifiedFormat = nullptr;
+    if (pb_pwfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+        auto wfex = reinterpret_cast<const WAVEFORMATEXTENSIBLE*>(pb_pwfx);
+        pb_modifiedFormat = *wfex;
+        pb_modifiedFormat.Format.nChannels = 2;
+        pb_modifiedFormat.Format.nSamplesPerSec = 48000;
+        pb_modifiedFormat.Format.nBlockAlign = (pb_modifiedFormat.Format.nChannels * pb_modifiedFormat.Format.wBitsPerSample) / 8;
+        pb_modifiedFormat.Format.nAvgBytesPerSec = pb_modifiedFormat.Format.nSamplesPerSec * pb_modifiedFormat.Format.nBlockAlign;
+        pb_modifiedFormat.Format.cbSize = sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX);
+        pb_modifiedFormat.dwChannelMask = KSAUDIO_SPEAKER_STEREO;
+
+        pModifiedFormat = reinterpret_cast<WAVEFORMATEX*>(&pb_modifiedFormat);
+    }
+    hr = pRenderClient->Initialize(
+        AUDCLNT_SHAREMODE_SHARED,
+        AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY,
+        200000,
+        0,
+        pModifiedFormat,
+        NULL
+    );
+    if (FAILED(hr)) {
+        std::cerr << "Failed to initialize playback audio client. HRESULT: 0x" << std::hex << hr << std::dec << std::endl;
+    }
+    hr = pRenderClient->GetService(IID_IAudioRenderClient, (void**)&pRenderService);
+    if (FAILED(hr)) {
+        std::cerr << "Failed to get render service. HRESULT: 0x" << std::hex << hr << std::dec << std::endl;
+    }
+    std::cout << "Playback initialized successfully" << std::endl;
 }
 
 void WasapiImpl::playbackLoop() {
+    if (!pRenderClient || !pRenderService) {
+        std::cerr << "Playback not initialized, cannot start playback loop" << std::endl;
+        return;
+    }
+
     UINT32 bufferFrameCount;
     UINT32 numFramesPadding;
     UINT32 numFramesAvailable;
-    DWORD flags = 0;
     BYTE *pData;
     HANDLE hRenderEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-    pPlaybackDevice->Activate(IID_IAudioClient, CLSCTX_ALL, NULL, (void**)&pRenderClient);
-    pRenderClient->GetMixFormat(&pb_pwfx);
-
-    WAVEFORMATEX* pModifiedFormat = nullptr;
-    WAVEFORMATEXTENSIBLE modifiedFormat = {0};
-    if (pb_pwfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
-        auto wfex = reinterpret_cast<const WAVEFORMATEXTENSIBLE*>(pb_pwfx);
-        modifiedFormat = *wfex;
-        modifiedFormat.Format.nChannels = 2;
-        modifiedFormat.Format.nSamplesPerSec = 48000;
-        modifiedFormat.Format.nBlockAlign = (modifiedFormat.Format.nChannels * modifiedFormat.Format.wBitsPerSample) / 8;
-        modifiedFormat.Format.nAvgBytesPerSec = modifiedFormat.Format.nSamplesPerSec * modifiedFormat.Format.nBlockAlign;
-        modifiedFormat.Format.cbSize = sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX);
-        modifiedFormat.dwChannelMask = KSAUDIO_SPEAKER_STEREO;
-
-        pModifiedFormat = reinterpret_cast<WAVEFORMATEX*>(&modifiedFormat);
+    
+    if (!hRenderEvent) {
+        std::cerr << "Failed to create render event" << std::endl;
+        return;
     }
-
-    pRenderClient->Initialize(
-        AUDCLNT_SHAREMODE_SHARED, 
-        AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, 
-        200000, 
-        0, 
-        pModifiedFormat, 
-        NULL
-    );
 
     pRenderClient->SetEventHandle(hRenderEvent);
     pRenderClient->GetBufferSize(&bufferFrameCount);
-    pRenderClient->GetService(IID_IAudioRenderClient, (void**)&pRenderService);
-
     pRenderClient->Start();
 
     playbackBuffer.clear();
+    
+    // Use the modified format that was set during initialization
+    WAVEFORMATEX* pModifiedFormat = reinterpret_cast<WAVEFORMATEX*>(&pb_modifiedFormat);
     
     std::stop_token stop_token = audioPlaybackThread.get_stop_token();
     while (!stop_token.stop_requested()) {
@@ -421,42 +467,80 @@ void WasapiImpl::playbackLoop() {
     CloseHandle(hRenderEvent);
 }
 
+void WasapiImpl::initializeCapture() {
+    if (!pCaptureDevice) {
+        std::cerr << "No capture device available" << std::endl;
+    }
+
+    // Activate audio client
+    HRESULT hr = pCaptureDevice->Activate(IID_IAudioClient, CLSCTX_ALL, NULL, (void**)&pCaptureClient);
+    if (FAILED(hr)) {
+        std::cerr << "Failed to activate capture audio client. HRESULT: 0x" << std::hex << hr << std::dec << std::endl;
+    }
+
+    // Get mix format
+    hr = pCaptureClient->GetMixFormat(&pwfx);
+    if (FAILED(hr)) {
+        std::cerr << "Failed to get capture mix format. HRESULT: 0x" << std::hex << hr << std::dec << std::endl;
+    }
+
+    printf("Capture Mix format:\n");
+    printf("  wFormatTag     : %d\n", pwfx->wFormatTag);
+    printf("  nChannels      : %d\n", pwfx->nChannels);
+    printf("  nSamplesPerSec : %d\n", pwfx->nSamplesPerSec);
+    printf("  nAvgBytesPerSec: %ld\n", pwfx->nAvgBytesPerSec);
+    printf("  nBlockAlign    : %ld\n", pwfx->nBlockAlign);
+    printf("  wBitsPerSample : %ld\n", pwfx->wBitsPerSample);
+    printf("  cbSize         : %ld\n", pwfx->cbSize);
+
+    // Modify format to our requirements
+    pwfx->nChannels = 2;
+    pwfx->nSamplesPerSec = 48000;
+    pwfx->nBlockAlign = (pwfx->nChannels * pwfx->wBitsPerSample) / 8;
+    pwfx->nAvgBytesPerSec = pwfx->nSamplesPerSec * pwfx->nBlockAlign;
+
+    // Initialize audio client
+    hr = pCaptureClient->Initialize(
+        AUDCLNT_SHAREMODE_SHARED,
+        AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY,
+        hnsRequestedDuration,
+        0,
+        pwfx,
+        NULL
+    );
+    if (FAILED(hr)) {
+        std::cerr << "Failed to initialize capture audio client. HRESULT: 0x" << std::hex << hr << std::dec << std::endl;
+    }
+
+    // Get capture service
+    hr = pCaptureClient->GetService(IID_IAudioCaptureClient, (void**)&pCaptureService);
+    if (FAILED(hr)) {
+        std::cerr << "Failed to get capture service. HRESULT: 0x" << std::hex << hr << std::dec << std::endl;
+    }
+
+    std::cout << "Capture initialized successfully" << std::endl;
+}
+
 void WasapiImpl::captureLoop() {
+    if (!pCaptureClient || !pCaptureService) {
+        std::cerr << "Capture not initialized, cannot start capture loop" << std::endl;
+        return;
+    }
+
     UINT32 nFrames = 0;
     DWORD flags = 0;
     BYTE* captureBuffer = nullptr;
     UINT32 bufferFrameCount = 0;
     
     HANDLE hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-    pCaptureDevice->Activate(IID_IAudioClient, CLSCTX_ALL, NULL, (void**)&pCaptureClient);
-    pCaptureClient->GetMixFormat(&pwfx);
-    printf("Capture Mix format:\n");
-    printf("  wFormatTag     : %d\n", pwfx->wFormatTag);
-    printf("  nChannels      : %d\n", pwfx->nChannels);
-    printf("  nSamplesPerSec : %d\n", pwfx->nSamplesPerSec);
-    printf("  nAvgBytesPerSec: %ld\n", pwfx->nAvgBytesPerSec);
-    printf("  nBlockAlign:   : %ld\n", pwfx->nBlockAlign);
-    printf("  wBitsPerSample:   : %ld\n", pwfx->wBitsPerSample);
-    printf("  cbSize:   : %ld\n", pwfx->cbSize);
-
-    pwfx->nChannels = 2;
-    pwfx->nSamplesPerSec = 48000;
-    pwfx->nBlockAlign = (pwfx->nChannels * pwfx->wBitsPerSample) / 8;
-    pwfx->nAvgBytesPerSec = pwfx->nSamplesPerSec * pwfx->nBlockAlign;
-
-    pCaptureClient->Initialize(
-        AUDCLNT_SHAREMODE_SHARED, 
-        AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, 
-        hnsRequestedDuration, 
-        0, 
-        pwfx,
-        NULL
-    );
+    if (!hEvent) {
+        std::cerr << "Failed to create capture event" << std::endl;
+        return;
+    }
 
     pCaptureClient->SetEventHandle(hEvent);
     pCaptureClient->GetBufferSize(&bufferFrameCount);
     printf("bufferFrameCount: %d\n", bufferFrameCount);
-    pCaptureClient->GetService(IID_IAudioCaptureClient, (void**)&pCaptureService);
 
     pCaptureClient->Start();
 
@@ -480,6 +564,12 @@ void WasapiImpl::captureLoop() {
         if (captureBuffer != nullptr) {
             float* floatSamples = reinterpret_cast<float*>(captureBuffer);
             size_t numSamples = nFrames * pwfx->nChannels;
+            
+            if (captureVolume != 1.0f) {
+                for (size_t i = 0; i < numSamples; ++i) {
+                    floatSamples[i] *= captureVolume;
+                }
+            }
                         
             // Add samples to our buffer
             audioBuffer.insert(audioBuffer.end(), floatSamples, floatSamples + numSamples);
@@ -497,6 +587,7 @@ void WasapiImpl::captureLoop() {
     }
 
     pCaptureClient->Stop();
+    CloseHandle(hEvent);
     std::cout << "Capture loop exited" << std::endl;
 }
 
@@ -517,6 +608,14 @@ void WasapiImpl::cleanup() {
     pCaptureClient->Stop();
     pCaptureClient->Release();
     pCaptureService->Release();
+    if (pCaptureVolume) {
+        pCaptureVolume->Release();
+        pCaptureVolume = nullptr;
+    }
+    if (pRenderVolume) {
+        pRenderVolume->Release();
+        pRenderVolume = nullptr;
+    }
     pCaptureDevice->Release();
     pPlaybackDevice->Release();
     pEndpoints->Release();
@@ -788,4 +887,65 @@ void WasapiImpl::selectInitialAudioDevices() {
             selectDefaultCaptureDevice();
         }
     }
+}
+
+void WasapiImpl::setCaptureVolume(float volume) {
+    captureVolume = std::max(0.0f, std::min(1.0f, volume));
+    std::cout << "Capture volume set to: " << (captureVolume * 100.0f) << "%" << std::endl;
+}
+
+void WasapiImpl::setVolume(bool isInput, float volume) {
+    volume = std::max(0.0f, std::min(1.0f, volume));
+    if (isInput) {
+        setCaptureVolume(volume);
+        notifyVolumeChanged(true, volume);
+        return;
+    }
+    ISimpleAudioVolume **pVolumeInterface = &pRenderVolume;
+    IAudioClient *pAudioClient = pRenderClient;
+    if (!pAudioClient) {
+        std::cerr << "Cannot set volume: Audio client not initialized for output" << std::endl;
+        return;
+    }
+    if (!(*pVolumeInterface)) {
+        HRESULT hr = pAudioClient->GetService(__uuidof(ISimpleAudioVolume), (void **)pVolumeInterface);
+        if (FAILED(hr)) {
+            std::cerr << "Failed to get ISimpleAudioVolume interface for output" << ". HRESULT: 0x" << std::hex << hr << std::dec << std::endl;
+            return;
+        }
+    }
+    HRESULT hr = (*pVolumeInterface)->SetMasterVolume(volume, nullptr);
+    if (SUCCEEDED(hr)) {
+        std::cout << "Set output volume to: " << (volume * 100.0f) << "%" << std::endl;
+        notifyVolumeChanged(false, volume);
+    } else {
+        std::cerr << "Failed to set volume for output" << ". HRESULT: 0x" << std::hex << hr << std::dec << std::endl;
+    }
+}
+
+float WasapiImpl::getVolume(bool isInput) const {
+    if (isInput) {
+        return captureVolume;
+    }
+    ISimpleAudioVolume *pVolumeInterface = pRenderVolume;
+    IAudioClient *pAudioClient = pRenderClient;
+    if (!pAudioClient) {
+        std::cerr << "Cannot get volume: Audio client not initialized for output" << std::endl;
+        return 1.0f;
+    }
+    if (!pVolumeInterface) {
+        HRESULT hr = pAudioClient->GetService(__uuidof(ISimpleAudioVolume), (void **)&const_cast<ISimpleAudioVolume *&>(pVolumeInterface));
+        if (FAILED(hr)) {
+            std::cerr << "Failed to get ISimpleAudioVolume interface for output" << ". HRESULT: 0x" << std::hex << hr << std::dec << std::endl;
+            return 1.0f;
+        }
+    }
+    float volume = 1.0f;
+    HRESULT hr = pVolumeInterface->GetMasterVolume(&volume);
+    if (FAILED(hr)) {
+        std::cerr << "Failed to get volume for output"
+                  << ". HRESULT: 0x" << std::hex << hr << std::dec << std::endl;
+        return 1.0f;
+    }
+    return volume;
 }
