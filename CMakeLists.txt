@@ -41,6 +41,7 @@ if(WIN32)
     list(APPEND COMMON_SOURCES
         src/audio/wasapi_impl.hpp
         src/audio/wasapi_impl.cpp
+        ui/jakki.rc
     )
 else()
     list(APPEND COMMON_SOURCES
