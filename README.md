@@ -1,4 +1,7 @@
-# jakki
+<div align="center">
+    <img height="128px" src="./ui/images/icon.svg" alt="" />
+    <h1>Jakki</h1>
+</div>
 
 ## BUILDING
 
@@ -50,7 +53,9 @@ ninja
 
 #### Prerequisites
 
-- Install [`Visual Studio`](https://visualstudio.microsoft.com/) with `Desktop development with C++`
+- Install [`Visual Studio`](https://visualstudio.microsoft.com/downloads) with `Desktop development with C++`
+  - or install only the build tools without IDE [`Build Tools for Visual Studio`](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2026)
+
 - Install [`Git`](https://github.com/git-for-windows/git/releases/latest)
 
 <br>
@@ -61,12 +66,16 @@ ninja
 <br>
 
 ```bash
-winget install --id Microsoft.VisualStudio.2022.Community --override "--quiet --add Microsoft.VisualStudio.Workload.NativeDesktop --includeRecommended"
+winget install --id Microsoft.VisualStudio.Community --override "--quiet --add Microsoft.VisualStudio.Workload.NativeDesktop --includeRecommended"
 ```
+
+```bash
+winget install --id Microsoft.VisualStudio.BuildTools --override "--quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+```
+
 ```bash
 winget install --id Git.Git
 ```
-
 
 - Install `vcpkg`
 ```bash
@@ -74,7 +83,7 @@ git clone https://github.com/microsoft/vcpkg.git; cd vcpkg; .\bootstrap-vcpkg.ba
 ```
 
 #### Building
-1. Open `x64 Native Tools Command Prompt for VS 2022`
+1. Open `x64 Native Tools Command Prompt for VS`
 2. Create CMakeFiles using preset
 ```bash
 cmake --preset vcpkg-release
