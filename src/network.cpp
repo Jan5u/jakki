@@ -1,5 +1,12 @@
 #include "network.hpp"
 
+enum class EventType {
+    ServerInfo,
+    Message,
+    UserJoin,
+    Unknown
+};
+
 Network::Network() : audioManager(nullptr) {
     // Default constructor
 }
@@ -8,7 +15,7 @@ Network::Network(Audio& audio) : audioManager(&audio) {
     // Constructor with Audio reference
 }
 
-void Network::connectToServer() {
+void Network::connectToServer(QString address, QString port) {
     std::cout << "connectToServer\n";
 
     if (connected) {
@@ -20,7 +27,7 @@ void Network::connectToServer() {
     initOpenssl();
 
     // connect QUIC
-    connectQUIC();
+    connectQUIC(address, port);
 }
 
 void Network::initOpenssl() {
@@ -30,7 +37,6 @@ void Network::initOpenssl() {
     OpenSSL_add_ssl_algorithms();
 }
 
-// yoinked from openssl example
 BIO *Network::create_socket_bio(const char *hostname, const char *port, int family, BIO_ADDR **peer_addr) {
     int sock = -1;
     BIO_ADDRINFO *res;
@@ -109,7 +115,7 @@ BIO *Network::create_socket_bio(const char *hostname, const char *port, int fami
     return bio;
 }
 
-void Network::connectQUIC() {
+void Network::connectQUIC(QString address, QString port) {
     std::cout << "connectQUIC\n";
     const SSL_METHOD *method = OSSL_QUIC_client_method();
     // const SSL_METHOD *method = OSSL_QUIC_client_thread_method();
@@ -126,7 +132,11 @@ void Network::connectQUIC() {
     SSL_set_incoming_stream_policy(ssl, SSL_INCOMING_STREAM_POLICY_ACCEPT, 0);
 
     BIO_ADDR *peer_addr = nullptr;
-    bio = create_socket_bio(SERVER_IP, std::to_string(SERVER_PORT).c_str(), AF_INET, &peer_addr);
+    QByteArray addressUtf8 = address.toUtf8();
+    QByteArray portUtf8 = port.toUtf8();
+    const char* SERVER_IP = addressUtf8.constData();
+    const char* SERVER_PORT = portUtf8.constData();
+    bio = create_socket_bio(SERVER_IP, SERVER_PORT, AF_INET, &peer_addr);
     if (!bio) {
         std::cerr << "Failed to create and connect BIO\n";
         SSL_free(ssl);
@@ -159,14 +169,14 @@ void Network::connectQUIC() {
     stream2 = SSL_new_stream(ssl, 0);
 
     sendMessage(stream1);
-    sendMessage(stream2);
+    // sendMessage(stream2);
     // sendMessage(stream3);
     // unidirectional receive voice stream
     // stream3 = SSL_accept_stream(ssl, 0);
     // SSL_get_stream_type()
 
     recvEventThread = std::jthread(&Network::receiveEventPackets, this);
-    recvVoiceThread = std::jthread(&Network::receiveVoicePackets, this);
+    // recvVoiceThread = std::jthread(&Network::receiveVoicePackets, this);
     heartbeatThread = std::jthread(&Network::sendHeartbeat, this);
 
 
@@ -189,10 +199,54 @@ void Network::handleEventPacket(char *buf, size_t bufsize) {
         std::string msg = data.substr(start, end - start);
         if (!msg.empty()) {
             std::cout << "Received message: " << msg << std::endl;
+            handleEventMessage(msg);
         }
         start = end + 1;
     }
     std::memset(buf, 0, bufsize);
+}
+
+EventType getEventType(const std::string& type) {
+    if (type == "ServerInfo") return EventType::ServerInfo;
+    if (type == "Message")    return EventType::Message;
+    if (type == "UserJoin")   return EventType::UserJoin;
+    return EventType::Unknown;
+}
+
+void Network::handleEventMessage(std::string msg) {
+    json j = json::parse(msg);
+    if (!j.contains("type")) {
+        std::cerr << "Invalid event\n";
+    }
+    EventType type = getEventType(j["type"]);
+    // match event type
+    switch (type) {
+        case EventType::ServerInfo:
+            if (j.contains("channels") && j["channels"].is_array()) {
+                // Extract channels from JSON and convert to QStringList
+                QStringList channelList;
+                for (const auto& channel : j["channels"]) {
+                    if (channel.is_string()) {
+                        channelList << QString::fromStdString(channel.get<std::string>());
+                    }
+                }
+                
+                std::cout << "Emitting " << channelList.size() << " channels to GUI\n";
+                emit channelsReceived(channelList);
+            }
+            break;
+        case EventType::UserJoin:
+            if (j.contains("user") && j.contains("channel")) {
+                QString user = QString::fromStdString(j["user"].get<std::string>());
+                QString channel = QString::fromStdString(j["channel"].get<std::string>());
+                std::cout << "User " << user.toStdString() << " joined channel " << channel.toStdString() << std::endl;
+                emit userJoinedChannel(user, channel);
+            }
+            break;
+        default:
+            std::cout << "Unknown event type.\n";
+            break;
+    }
 }
 
 void Network::receiveEventPackets() {
@@ -325,5 +379,41 @@ void Network::sendHeartbeat() {
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    }
+}
+
+void Network::joinVoiceChannel(QString channelName) {
+    // send channel name to voice stream
+    std::string channelNameStr = channelName.toStdString();
+    const char* message = channelNameStr.c_str();
+    size_t written = 0;
+    int result = SSL_write_ex(stream2, message, strlen(message), &written);
+    if (!result) {
+        std::cerr << "Failed to send channel name to voice stream\n";
+    } else {
+        std::cout << "Sent voice channel join request: " << channelNameStr << std::endl;
+    }
+
+    // wait for confirmation (only inspect the first 2 bytes for "ok")
+    char confirmBuf[1024] = {};
+    size_t confirmReadBytes = 0;
+    std::cout << "Waiting for voice channel join confirmation...\n";
+
+    int confirmResult = SSL_read_ex(stream2, confirmBuf, sizeof(confirmBuf), &confirmReadBytes);
+    if (confirmResult && confirmReadBytes >= 2) {
+        bool isOk = (confirmBuf[0] == 'o' && confirmBuf[1] == 'k');
+        if (isOk) {
+            std::cout << "Successfully joined voice channel: " << channelNameStr << std::endl;
+
+            // Initialize record and playback loops
+            audioManager->startAudioThread();
+
+            // Start receiving voice packets
+            recvVoiceThread = std::jthread(&Network::receiveVoicePackets, this);
+        } else {
+            std::cerr << "Voice channel join rejected (did not receive leading 'ok')\n";
+        }
+    } else {
+        std::cerr << "Failed to read confirmation from voice stream\n";
     }
 }

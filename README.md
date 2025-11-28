@@ -1,33 +1,36 @@
-# jakki
+<div align="center">
+    <img height="128px" src="./ui/images/icon.svg" alt="" />
+    <h1>Jakki</h1>
+</div>
 
-## COMPILATION
+## BUILDING
 
-### DEPENDENCIES
+### Building on Linux
 
-#### Debian
+#### Dependencies
 
-```bash
-sudo apt install meson ninja-build qt6-base-dev libssl-dev libnotify4 libpipewire-0.3-dev libopus-dev libavcodec-dev libavformat-dev
-```
-
-#### Arch
-
-```bash
-sudo pacman -S --needed meson ninja qt6-base openssl libnotify libpipewire opus ffmpeg
-```
-
-#### Fedora
+Debian 13 / Ubuntu 25
 
 ```bash
-sudo dnf in meson ninja qt6-qtbase-devel openssl-devel opus-devel pipewire-devel ffmpeg-free-devel libnotify-devel
+sudo apt install ninja-build qt6-base-dev libssl-dev libnotify-dev libpipewire-0.3-dev libopus-dev nlohmann-json3-dev libavcodec-dev libavformat-dev
 ```
 
-#### Nixos
+Arch
+
+```bash
+sudo pacman -S --needed ninja qt6-base openssl libnotify libpipewire opus ffmpeg nlohmann-json
+```
+
+Fedora
+
+```bash
+sudo dnf in ninja qt6-qtbase-devel openssl-devel opus-devel pipewire-devel ffmpeg-free-devel libnotify-devel json-devel
+```
 
 Enter nix shell
 
 ```bash
-nix-shell -p meson ninja qt6.full cmake pkg-config openssl.dev libopus.dev pipewire.dev ffmpeg.dev nlohmann_json pipewire
+nix-shell -p ninja qt6.full cmake pkg-config openssl.dev libopus.dev pipewire.dev ffmpeg.dev nlohmann_json pipewire
 ```
 
 Run with env variable
@@ -36,10 +39,61 @@ Run with env variable
 XDG_RUNTIME_DIR=/run/user/$(id -u) ./build/jakki
 ```
 
-### BUILDING
+
+#### Building
 
 ```bash
-meson setup build
-meson compile -C build
-# meson install -C build
+cmake --preset gcc-release
+cd build/release
+ninja
+./jakki
+```
+
+### Building on Windows using vcpkg
+
+#### Prerequisites
+
+- Install [`Visual Studio`](https://visualstudio.microsoft.com/downloads) with `Desktop development with C++`
+  - or install only the build tools without IDE [`Build Tools for Visual Studio`](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2026)
+
+- Install [`Git`](https://github.com/git-for-windows/git/releases/latest)
+
+<br>
+
+> [!TIP]
+> Alternatively you can install these using WinGet
+
+<br>
+
+```bash
+winget install --id Microsoft.VisualStudio.Community --override "--quiet --add Microsoft.VisualStudio.Workload.NativeDesktop --includeRecommended"
+```
+
+```bash
+winget install --id Microsoft.VisualStudio.BuildTools --override "--quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+```
+
+```bash
+winget install --id Git.Git
+```
+
+- Install `vcpkg`
+```bash
+git clone https://github.com/microsoft/vcpkg.git; cd vcpkg; .\bootstrap-vcpkg.bat -disableMetrics
+```
+
+#### Building
+1. Open `x64 Native Tools Command Prompt for VS`
+2. Create CMakeFiles using preset
+```bash
+cmake --preset vcpkg-release
+```
+3. Navigate to build folder
+```bash
+cd build\release
+```
+4. Build with ninja
+```bash
+ninja
+.\jakki.exe
 ```
