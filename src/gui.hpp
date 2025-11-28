@@ -1,6 +1,7 @@
 #pragma once
 
 #include "audio/audio.hpp"
+#include "auth.hpp"
 #include "config.hpp"
 #include "network.hpp"
 #include <QDebug>
@@ -12,11 +13,15 @@
 #include <QStandardItemModel>
 #include <QStyleFactory>
 #include <QWidgetAction>
+#include <QJsonDocument>
+#include <QJsonArray>
+#include <QJsonObject>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
 class MainWindow;
 class SettingsTab;
+class adminPanelTab;
 } // namespace Ui
 QT_END_NAMESPACE
 
@@ -30,11 +35,15 @@ class MainWindow : public QMainWindow {
   private:
     Ui::MainWindow *ui;
     Ui::SettingsTab *uiSettings;
+    Ui::adminPanelTab *uiAdminPanel;
     Config config;
+    Auth authManager;
     Audio audioManager;
     Network networkManager;
     QStandardItemModel *model;
+    QStandardItemModel *accountsModel;
     QWidget *settingsTab;
+    QWidget *adminPanelTab;
     bool isInitialDeviceSetup = true;
     QString currentInputDeviceId;
     QString currentOutputDeviceId;
@@ -42,6 +51,7 @@ class MainWindow : public QMainWindow {
     void updateAudioDeviceComboBox();
     bool validateInputDevice();
     bool validateOutputDevice();
+    void sendAdminRequest(const QString &requestType);
 
   private slots:
     void disconnect();
@@ -62,4 +72,7 @@ class MainWindow : public QMainWindow {
     void onCaptureVolumeChanged(int value);
     void onVolumeChanged(bool isInput, float volume);
     void onStyleChanged(int index);
+    void requestUsersDatabase();
+    void handleAdminResponse(const QString& request, const QString& jsonData);
+    void approveSelectedUser();
 };

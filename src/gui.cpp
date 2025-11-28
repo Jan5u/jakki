@@ -4,8 +4,10 @@
 #include "ui_main.h"
 #include "ui_textchannel.h"
 #include "ui_settings.h"
+#include "ui_adminpanel.h"
 
-MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow), audioManager(networkManager, config), networkManager(audioManager) {
+
+MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow), audioManager(networkManager, config), networkManager(audioManager, authManager) {
     ui->setupUi(this);
     connect(ui->actionQuit, &QAction::triggered, this, &QApplication::quit);
     connect(ui->actionDisconnect, &QAction::triggered, this, &MainWindow::disconnect);
@@ -14,6 +16,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->treeView, &QTreeView::clicked, this, &MainWindow::onTreeViewItemClicked);
     connect(&networkManager, &Network::channelsReceived, this, &MainWindow::addChannels);
     connect(&networkManager, &Network::userJoinedChannel, this, &MainWindow::onUserJoinedChannel);
+    connect(&networkManager, &Network::authenticationFailed, this, [this](const QString& reason) {
+        qDebug() << "Authentication failed:" << reason;
+        // TODO: Show error dialog to user
+    });
+    connect(&networkManager, &Network::adminResponseReceived, this, &MainWindow::handleAdminResponse);
     connect(&audioManager, &Audio::deviceListChanged, this, &MainWindow::updateAudioDeviceComboBox);
     connect(&audioManager, &Audio::defaultDeviceChanged, this, &MainWindow::onDefaultDeviceChanged);
     connect(&audioManager, &Audio::volumeChanged, this, &MainWindow::onVolumeChanged);
@@ -28,6 +35,21 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     uiSettings = new Ui::SettingsTab;
     uiSettings->setupUi(settingsTab);
     ui->tabWidget->addTab(settingsTab, "Settings");
+
+    // Setup admin panel tab
+    adminPanelTab = new QWidget;
+    uiAdminPanel = new Ui::adminPanelTab;
+    uiAdminPanel->setupUi(adminPanelTab);
+    ui->tabWidget->addTab(adminPanelTab, "Admin Panel");
+    
+    // Connect admin panel signals
+    connect(uiAdminPanel->accountspushButton, &QPushButton::clicked, this, &MainWindow::requestUsersDatabase);
+    connect(uiAdminPanel->approvepushButton, &QPushButton::clicked, this, &MainWindow::approveSelectedUser);
+    
+    // Setup accounts table
+    accountsModel = new QStandardItemModel(this);
+    accountsModel->setHorizontalHeaderLabels({"ID", "Username", "Public Key", "Admin", "Approved", "Created", "Last Auth"});
+    uiAdminPanel->accountstableView->setModel(accountsModel);
     
     // Initialize audio device combo boxes
     updateAudioDeviceComboBox();
@@ -83,6 +105,10 @@ MainWindow::~MainWindow() {
 void MainWindow::disconnect() {
     qDebug("disconnect");
     networkManager.disconnectQUIC();
+    
+    // Clear the channel list
+    model->clear();
+    model->setHorizontalHeaderLabels({"Channels"});
 }
 
 void MainWindow::showConnectDialog() {
@@ -93,7 +119,18 @@ void MainWindow::showConnectDialog() {
     if (dialog.exec() == QDialog::Accepted) {
         QString address = uiDialog.lineEdit->text();
         QString port = uiDialog.lineEdit_2->text();
-        qDebug() << "Connect to:" << address << ":" << port;
+        QString username = uiDialog.usernamelineEdit_3->text();
+        
+        qDebug() << "Connect to:" << address << ":" << port << "as user:" << username;
+        
+        // Set username in auth manager
+        if (!username.isEmpty()) {
+            authManager.setUsername(username);
+        } else {
+            qDebug() << "Warning: No username provided, using default";
+            authManager.setUsername("default_user");
+        }
+        
         networkManager.connectToServer(address, port);
     }
 }
@@ -442,4 +479,82 @@ void MainWindow::onStyleChanged(int index) {
         qApp->setStyleSheet("");
         QApplication::setStyle(QStyleFactory::create(styleName));
     }
+}
+
+void MainWindow::requestUsersDatabase() {
+    qDebug() << "Requesting users database from server...";
+    sendAdminRequest("get_users");
+}
+
+void MainWindow::sendAdminRequest(const QString &requestType) {
+    if (!networkManager.isConnected()) {
+        qDebug() << "Cannot send admin request: not connected to server";
+        return;
+    }
+    
+    qDebug() << "Sending admin request:" << requestType;
+    networkManager.sendAdminMessage(requestType);
+}
+
+void MainWindow::handleAdminResponse(const QString& request, const QString& jsonData) {
+    qDebug() << "Handling admin response for:" << request;
+    
+    if (request == "get_users") {
+        // Parse JSON data
+        QJsonParseError error;
+        QJsonDocument doc = QJsonDocument::fromJson(jsonData.toUtf8(), &error);
+        
+        if (error.error != QJsonParseError::NoError) {
+            qDebug() << "JSON parse error:" << error.errorString();
+            return;
+        }
+        
+        if (!doc.isArray()) {
+            qDebug() << "Expected JSON array for user data";
+            return;
+        }
+        
+        QJsonArray users = doc.array();
+        
+        // Clear existing data
+        accountsModel->clear();
+        accountsModel->setHorizontalHeaderLabels({"ID", "Username", "Public Key", "Admin", "Approved", "Created", "Last Auth"});
+        
+        // Populate table with user data
+        for (const QJsonValue& userValue : users) {
+            if (!userValue.isObject()) continue;
+            
+            QJsonObject user = userValue.toObject();
+            
+            QList<QStandardItem*> row;
+            row << new QStandardItem(QString::number(user["id"].toInt()));
+            row << new QStandardItem(user["username"].toString());
+            row << new QStandardItem(user["public_key"].toString());
+            row << new QStandardItem(user["is_admin"].toBool() ? "Yes" : "No");
+            row << new QStandardItem(user["is_approved"].toBool() ? "Yes" : "No");
+            row << new QStandardItem(user["created_at"].toString());
+            row << new QStandardItem(user["last_auth"].toString());
+            
+            accountsModel->appendRow(row);
+        }
+        
+        qDebug() << "Populated accounts table with" << users.size() << "users";
+    }
+}
+
+void MainWindow::approveSelectedUser() {
+    QModelIndexList selectedIndexes = uiAdminPanel->accountstableView->selectionModel()->selectedRows();
+    
+    if (selectedIndexes.isEmpty()) {
+        qDebug() << "No user selected for approval";
+        return;
+    }
+    
+    // Get the ID from the first column of the selected row
+    QModelIndex selectedIndex = selectedIndexes.first();
+    QModelIndex idIndex = accountsModel->index(selectedIndex.row(), 0); // ID is in column 0
+    QString userId = accountsModel->data(idIndex).toString();
+    
+    qDebug() << "Approving user with ID:" << userId;
+    sendAdminRequest("approve_user:" + userId);
 }

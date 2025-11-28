@@ -10,6 +10,7 @@ find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_package(nlohmann_json REQUIRED)
+find_package(Qt6Keychain REQUIRED)
 if(UNIX)
     pkg_check_modules(PIPEWIRE REQUIRED libpipewire-0.3)
     pkg_check_modules(LIBNOTIFY REQUIRED libnotify)
@@ -30,6 +31,8 @@ set(COMMON_SOURCES
     src/gui.cpp
     src/network.hpp
     src/network.cpp
+    src/auth.hpp
+    src/auth.cpp
     src/audio/audio_impl.hpp
     src/audio/audio_impl.cpp
     src/audio/audio.hpp
@@ -51,9 +54,9 @@ else()
 endif()
 
 qt_add_executable(jakki ui/jakki.qrc ${COMMON_SOURCES})
-qt_add_ui(jakki SOURCES ui/main.ui ui/connect.ui ui/textchannel.ui ui/settings.ui)
+qt_add_ui(jakki SOURCES ui/main.ui ui/connect.ui ui/textchannel.ui ui/settings.ui ui/adminpanel.ui)
 
-target_link_libraries(jakki PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets OpenSSL::SSL OpenSSL::Crypto nlohmann_json::nlohmann_json Threads::Threads)
+target_link_libraries(jakki PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6Keychain::Qt6Keychain OpenSSL::SSL OpenSSL::Crypto nlohmann_json::nlohmann_json Threads::Threads)
 
 if(WIN32)
     target_link_libraries(jakki PRIVATE Opus::opus ${FFMPEG_LIBRARIES})
