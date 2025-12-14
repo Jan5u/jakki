@@ -88,7 +88,17 @@
      <string>Help</string>
     </property>
    </widget>
+   <widget class="QMenu" name="menuChannel">
+    <property name="title">
+     <string>Channel</string>
+    </property>
+    <addaction name="actionMute"/>
+    <addaction name="actionDeafen"/>
+    <addaction name="separator"/>
+    <addaction name="actionShare_Screen"/>
+   </widget>
    <addaction name="menuConnect"/>
+   <addaction name="menuChannel"/>
    <addaction name="menuPreferences"/>
    <addaction name="menuHelp"/>
   </widget>
@@ -114,6 +124,30 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+D</string>
+   </property>
+  </action>
+  <action name="actionMute">
+   <property name="text">
+    <string>Mute</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+M</string>
+   </property>
+  </action>
+  <action name="actionDeafen">
+   <property name="text">
+    <string>Deafen</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+D</string>
+   </property>
+  </action>
+  <action name="actionShare_Screen">
+   <property name="text">
+    <string>Share Screen</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+S</string>
    </property>
   </action>
  </widget>

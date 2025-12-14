@@ -4,8 +4,9 @@
 #include "ui_main.h"
 #include "ui_textchannel.h"
 #include "ui_settings.h"
+#include "ui_screenshare.h"
 
-MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow), audioManager(networkManager, config), networkManager(audioManager) {
+MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow), audioManager(networkManager, config), networkManager(audioManager), videoManager(config) {
     ui->setupUi(this);
     connect(ui->actionQuit, &QAction::triggered, this, &QApplication::quit);
     connect(ui->actionDisconnect, &QAction::triggered, this, &MainWindow::disconnect);
@@ -17,6 +18,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(&audioManager, &Audio::deviceListChanged, this, &MainWindow::updateAudioDeviceComboBox);
     connect(&audioManager, &Audio::defaultDeviceChanged, this, &MainWindow::onDefaultDeviceChanged);
     connect(&audioManager, &Audio::volumeChanged, this, &MainWindow::onVolumeChanged);
+    connect(ui->actionShare_Screen, &QAction::triggered, this, &MainWindow::showScreenShareDialog);
 
     model = new QStandardItemModel(this);
     model->setHorizontalHeaderLabels({"Channels"});
@@ -28,6 +30,15 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     uiSettings = new Ui::SettingsTab;
     uiSettings->setupUi(settingsTab);
     ui->tabWidget->addTab(settingsTab, "Settings");
+    
+
+    vulkanWindow = videoManager.createVulkanWindow();
+    connect(vulkanWindow, &VulkanWindow::frameQueued, this, &MainWindow::onFrameQueued);
+    vulkanTab = videoManager.createVulkanTab(this);
+    if (vulkanTab) {
+        ui->tabWidget->addTab(vulkanTab, "Screen");
+    }
+    videoManager.startDecodeThread();
     
     // Initialize audio device combo boxes
     updateAudioDeviceComboBox();
@@ -72,6 +83,80 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     }
     onStyleChanged(uiSettings->StyleSelectComboBox->currentIndex());
     connect(uiSettings->StyleSelectComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onStyleChanged);
+}
+
+void MainWindow::showScreenShareDialog() {
+    QDialog dialog(this);
+    Ui::screenShareDialog uiDialog;
+    uiDialog.setupUi(&dialog);
+
+    videoManager.selectScreen();
+
+    QMap<QString, QString> nvidiaMap = {
+        { "H264", "h264_nvenc" },
+        { "H265", "hevc_nvenc" },
+        { "AV1",  "av1_nvenc" }
+    };
+
+    QMap<QString, QString> vulkanMap = {
+        { "H264", "h264_vulkan" },
+        { "H265", "hevc_vulkan" },
+        { "AV1",  "av1_vulkan" }
+    };
+
+    uiDialog.encodersComboBox->clear();
+    
+    bool hasNVIDIA = !videoManager.supportedNVIDIAEncoders.empty();
+    bool hasVulkan = !videoManager.supportedVulkanEncoders.empty();
+    
+    if (hasNVIDIA) {
+        uiDialog.encodersComboBox->addItem("NVIDIA", "nvidia");
+    }
+    if (hasVulkan) {
+        uiDialog.encodersComboBox->addItem("Vulkan", "vulkan");
+    }
+    
+    auto updateFormatsComboBox = [&]() {
+        uiDialog.formatsComboBox->clear();
+        
+        QString selectedEncoderType = uiDialog.encodersComboBox->currentData().toString();
+        const auto& supportedEncoders = (selectedEncoderType == "nvidia") 
+            ? videoManager.supportedNVIDIAEncoders 
+            : videoManager.supportedVulkanEncoders;
+        
+        const auto& encoderMap = (selectedEncoderType == "nvidia") ? nvidiaMap : vulkanMap;
+        
+        for (auto it = encoderMap.constBegin(); it != encoderMap.constEnd(); ++it) {
+            const QString& format = it.key();
+            const QString& codecName = it.value();
+            
+            bool isSupported = std::any_of(
+                supportedEncoders.begin(), 
+                supportedEncoders.end(),
+                [&codecName](const std::string& encoder) {
+                    return QString::fromStdString(encoder) == codecName;
+                }
+            );
+            
+            if (isSupported) {
+                uiDialog.formatsComboBox->addItem(format, codecName);
+            }
+        }
+    };
+    
+    updateFormatsComboBox();
+    
+    connect(uiDialog.encodersComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), [&updateFormatsComboBox]() { updateFormatsComboBox(); });
+
+    if (dialog.exec() == QDialog::Accepted) {
+        QString selectedEncoderType = uiDialog.encodersComboBox->currentText();
+        QString selectedFormat = uiDialog.formatsComboBox->currentText();
+        QString selectedCodec = uiDialog.formatsComboBox->currentData().toString();
+        
+        qDebug() << "Selected encoder type:" << selectedEncoderType;
+        qDebug() << "Selected format:" << selectedFormat;
+        qDebug() << "Selected codec:" << selectedCodec;
+    }
 }
 
 MainWindow::~MainWindow() {
@@ -442,4 +527,9 @@ void MainWindow::onStyleChanged(int index) {
         qApp->setStyleSheet("");
         QApplication::setStyle(QStyleFactory::create(styleName));
     }
+}
+
+
+void MainWindow::onFrameQueued(int colorValue) {
+    // qDebug() << "Frame queued:" << colorValue;
 }

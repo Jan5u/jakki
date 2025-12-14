@@ -2,3 +2,4 @@
 .vscode
 build
 vcpkg_installed
+ui/shaders/*.spv
