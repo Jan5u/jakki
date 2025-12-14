@@ -10,5 +10,8 @@
 
 class DxgiImpl : public VideoImpl {
     public:
+        DxgiImpl();
+        ~DxgiImpl();
+        void selectScreen() override;
     private:
 };

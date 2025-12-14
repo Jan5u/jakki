@@ -1,7 +1,12 @@
 #include "video.hpp"
-#include "pipewire_impl.hpp"
 #include "screen_renderer.hpp"
 #include "vulkan_renderer.hpp"
+
+#ifdef _WIN32
+#include "dxgi_impl.hpp"
+#else
+#include "pipewire_impl.hpp"
+#endif
 
 
 static AVBufferRef *hw_device_ctx = nullptr;
