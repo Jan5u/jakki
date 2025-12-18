@@ -20,7 +20,7 @@
 - CMake (make)
 - Ninja (make)
 - nv-codec-headers (make) 
-- glslc (make)
+- Vulkan-Headers (make)
 - nlohmann-json (make)
 - glslc/shaderc (make)
 
@@ -34,7 +34,7 @@ sudo apt install ninja-build qt6-base-dev libssl-dev libnotify-dev libpipewire-0
 Arch
 
 ```bash
-sudo pacman -S --needed ninja qt6-base openssl libnotify libpipewire opus ffmpeg ffnvcodec-headers xdg-desktop-portal nlohmann-json shaderc
+sudo pacman -S --needed ninja qt6-base openssl libnotify libpipewire opus ffmpeg ffnvcodec-headers xdg-desktop-portal nlohmann-json vulkan-headers shaderc
 ```
 
 Fedora
