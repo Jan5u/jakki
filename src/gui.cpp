@@ -38,7 +38,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     if (vulkanTab) {
         ui->tabWidget->addTab(vulkanTab, "Screen");
     }
-    videoManager.startDecodeThread();
     
     // Initialize audio device combo boxes
     updateAudioDeviceComboBox();

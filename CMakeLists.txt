@@ -67,6 +67,10 @@ set(COMMON_SOURCES
     src/video/vulkan_renderer.cpp
     src/video/screen_renderer.hpp
     src/video/screen_renderer.cpp
+    src/video/renderer.hpp
+    src/video/renderer.cpp
+    src/video/decode.hpp
+    src/video/decode.cpp
 )
 if(WIN32)
     list(APPEND COMMON_SOURCES
