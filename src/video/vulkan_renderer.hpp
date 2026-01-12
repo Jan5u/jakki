@@ -6,7 +6,7 @@
 
 #include <print>
 
-#include "renderer.hpp"
+#include "screen_renderer.hpp"
 
 class VulkanWindow;
 
@@ -23,7 +23,7 @@ class VulkanWidget : public QWidget {
     VulkanWindow *m_window;
 };
 
-class VulkanRenderer : public Renderer {
+class VulkanRenderer : public ScreenRenderer {
   public:
     VulkanRenderer(VulkanWindow *w);
 

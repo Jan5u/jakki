@@ -5,7 +5,6 @@
 #include <QVersionNumber>
 #include <QVulkanInstance>
 #include <QWidget>
-
 #include <chrono>
 #include <print>
 #include <string>
@@ -35,6 +34,7 @@ class Video {
     VulkanWindow *createVulkanWindow();
     QWidget *createVulkanTab(QWidget *parent);
     void selectScreen();
+    void startDecodeThread();
     std::vector<std::string> getSupportedEncoders();
     std::vector<std::string> getSupportedNVIDIAEncoders();
     std::vector<std::string> getSupportedVulkanEncoders();
@@ -53,6 +53,7 @@ class Video {
     std::jthread decodeThread;
     std::jthread nvidiaEncoderThread;
     std::jthread vulkanEncoderThread;
+    void decoderInit();
 
     VulkanWindow *m_vulkanWindow = nullptr;
     ScreenRenderer *m_renderer = nullptr;

@@ -12,10 +12,15 @@ QVulkanWindowRenderer *VulkanWindow::createRenderer() {
     return new VulkanRenderer(this); 
 }
 
-VulkanRenderer::VulkanRenderer(VulkanWindow *w) : Renderer(w) {}
+extern ScreenRenderer *g_renderer;
+
+VulkanRenderer::VulkanRenderer(VulkanWindow *w) : ScreenRenderer(w) {
+    g_renderer = this;
+    std::println("VulkanRenderer created, global pointer set");
+}
 
 void VulkanRenderer::initResources() {
-    Renderer::initResources();
+    ScreenRenderer::initResources();
 
     QVulkanInstance *inst = m_window->vulkanInstance();
     m_devFuncs = inst->deviceFunctions(m_window->device());
@@ -65,6 +70,6 @@ void VulkanRenderer::initResources() {
 }
 
 void VulkanRenderer::startNextFrame() {
-    Renderer::startNextFrame();
+    ScreenRenderer::startNextFrame();
     emit static_cast<VulkanWindow *>(m_window)->frameQueued(0);
 }
