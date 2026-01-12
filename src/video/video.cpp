@@ -173,13 +173,7 @@ VulkanWindow* Video::createVulkanWindow() {
     QVulkanInstance *inst = new QVulkanInstance;
     inst->setApiVersion(QVersionNumber(1, 3, 0));
     inst->setLayers({"VK_LAYER_KHRONOS_validation"});
-    inst->setExtensions({
-        "VK_KHR_get_physical_device_properties2",
-        "VK_KHR_surface",
-        "VK_KHR_get_surface_capabilities2",
-        "VK_EXT_surface_maintenance1",
-        "VK_KHR_external_memory_capabilities",
-    });
+    // inst->setExtensions({});
     if (!inst->create()) {
         qFatal("Failed to create Vulkan instance: %d", inst->errorCode());
     }
@@ -187,50 +181,48 @@ VulkanWindow* Video::createVulkanWindow() {
     m_vulkanWindow = new VulkanWindow;
     m_vulkanWindow->setVulkanInstance(inst);
     m_vulkanWindow->setEnabledFeaturesModifier([](VkPhysicalDeviceFeatures2 &features) {
-        VkPhysicalDeviceSamplerYcbcrConversionFeatures *ycbcrFeatures = 
-            reinterpret_cast<VkPhysicalDeviceSamplerYcbcrConversionFeatures*>(
-                const_cast<void*>(features.pNext));
+        static VkPhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,
+            .pNext = features.pNext,
+            .dynamicRendering = VK_TRUE
+        };
+        features.pNext = &dynamicRenderingFeatures;
 
-        bool found = false;
-        while (ycbcrFeatures && ycbcrFeatures->sType != VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES) {
-            if (!ycbcrFeatures->pNext) break;
-            ycbcrFeatures = reinterpret_cast<VkPhysicalDeviceSamplerYcbcrConversionFeatures*>(
-                const_cast<void*>(ycbcrFeatures->pNext));
-        }
-        
-        if (ycbcrFeatures && ycbcrFeatures->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES) {
-            ycbcrFeatures->samplerYcbcrConversion = VK_TRUE;
-            found = true;
-        }
-        
-        if (!found) {
-            static VkPhysicalDeviceSamplerYcbcrConversionFeatures ycbcrFeat = {};
-            ycbcrFeat.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES;
-            ycbcrFeat.pNext = features.pNext;
-            ycbcrFeat.samplerYcbcrConversion = VK_TRUE;
-            features.pNext = &ycbcrFeat;
-        }
-        
-        qDebug() << "Enabled samplerYcbcrConversion feature";
+        static VkPhysicalDeviceDynamicRenderingLocalReadFeatures dynamicRenderingLocalReadFeatures = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_LOCAL_READ_FEATURES,
+            .pNext = features.pNext,
+            .dynamicRenderingLocalRead = VK_TRUE
+        };
+        features.pNext = &dynamicRenderingLocalReadFeatures;
+
+        static VkPhysicalDeviceUnifiedImageLayoutsFeaturesKHR unifiedImageLayoutsFeatures = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFIED_IMAGE_LAYOUTS_FEATURES_KHR,
+            .pNext = features.pNext,
+            .unifiedImageLayouts = VK_TRUE,
+            .unifiedImageLayoutsVideo = VK_TRUE
+        };
+        features.pNext = &unifiedImageLayoutsFeatures;
+
+        static VkPhysicalDeviceTimelineSemaphoreFeatures timelineSemaphoreFeatures = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES,
+            .pNext = features.pNext,
+            .timelineSemaphore = VK_TRUE
+        };
+        features.pNext = &timelineSemaphoreFeatures;
+
+        static VkPhysicalDeviceSamplerYcbcrConversionFeatures ycbcrConversionFeatures = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES,
+            .pNext = features.pNext,
+            .samplerYcbcrConversion = VK_TRUE
+        };
+        features.pNext = &ycbcrConversionFeatures;
     });
     
     m_vulkanWindow->setDeviceExtensions({
-        "VK_KHR_maintenance1", 
-        "VK_KHR_bind_memory2", 
-        "VK_KHR_get_memory_requirements2", 
-        "VK_KHR_sampler_ycbcr_conversion",
-        "VK_KHR_swapchain",
-        "VK_EXT_swapchain_maintenance1",
-        "VK_KHR_external_memory",
+        "VK_KHR_dynamic_rendering_local_read",
         "VK_KHR_external_memory_fd",
         "VK_EXT_external_memory_dma_buf",
-        "VK_KHR_synchronization2",
-        // "VK_KHR_video_queue",
-        // "VK_KHR_video_decode_queue",
-        // "VK_KHR_video_decode_h264",
-        // "VK_KHR_video_decode_h265",
-        // "VK_KHR_video_decode_vp9",
-        // "VK_KHR_video_decode_av1",
+        "VK_KHR_external_memory_win32"
     });
     std::println("Vulkan window created");
     return m_vulkanWindow;
