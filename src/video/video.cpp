@@ -328,7 +328,7 @@ static int decode_write(AVCodecContext *avctx, AVPacket *packet)
 }
 
 void Video::decoderInit() {
-    const char path[] = "pathtotestvideo";
+    const char path[] = "./output.h264";
     int video_stream, ret, i;
 
     while ((type = av_hwdevice_iterate_types(type)) != AV_HWDEVICE_TYPE_NONE) {

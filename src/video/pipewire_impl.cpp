@@ -2,6 +2,7 @@
 
 VideoPipewireImpl::VideoPipewireImpl() {
     std::println("VideoPipewireImpl initialized");
+    encoder.init();
 }
 
 VideoPipewireImpl::~VideoPipewireImpl() {
@@ -328,9 +329,27 @@ static void on_process(void *userdata) {
         pw_stream_queue_buffer(data->stream, b);
         return;
     }
-    std::println("got a frame: size={}, stride={}, flags={}", d->chunk->size, d->chunk->stride, d->chunk->flags);
-    if (d->type == SPA_DATA_MemFd || d->type == SPA_DATA_DmaBuf) {
-        std::println("  type: DMA-BUF/MemFd (fd={})", d->fd);
+    if (d->type == SPA_DATA_MemFd) {
+        std::println("  type: MemFd (fd={})", d->fd);
+    } else if (d->type == SPA_DATA_DmaBuf) {
+        std::println("  type: DMA-BUF (fd={})", d->fd);
+        
+        int width = data->format.info.raw.size.width;
+        int height = data->format.info.raw.size.height;
+        int stride = width * 4;
+        
+        if (d->maxsize > 0 && height > 0) {
+            stride = d->maxsize / height;
+        } else {
+            std::println("  Using calculated stride: {}", stride);
+        }
+        
+        uint64_t modifier = data->format.info.raw.modifier;
+        if (modifier == 0) {
+            modifier = DRM_FORMAT_MOD_LINEAR;
+        }
+
+        self->encoder.encodeDmaBufFrame(d->fd, width, height, stride, modifier);
     } else if (d->type == SPA_DATA_MemPtr) {
         std::println("  type: MemPtr (data={})", (void *)d->data);
     }
@@ -361,7 +380,7 @@ static void on_param_changed(void *userdata, uint32_t id, const struct spa_pod *
     if (spa_format_video_raw_parse(param, &data->format.info.raw) < 0)
         return;
 
-    std::println("Got video format: {}x{}", data->format.info.raw.size.width, data->format.info.raw.size.height);
+    std::println("res: {}x{} format: {} mod: {}", data->format.info.raw.size.width, data->format.info.raw.size.height, uint8_t(data->format.info.raw.format), data->format.info.raw.modifier);
 }
 
 void VideoPipewireImpl::openPipewireRemote() {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "video_impl.hpp"
+#include "encode.hpp"
 
 #include <print>
 #include <thread>
@@ -28,6 +29,7 @@ class VideoPipewireImpl : public VideoImpl {
     ~VideoPipewireImpl();
     void selectScreen() override;
     PipewireData pwdata;
+    Encoder encoder;
 
   private:
     void initPortal();

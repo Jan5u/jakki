@@ -67,6 +67,8 @@ set(COMMON_SOURCES
     src/video/vulkan_renderer.cpp
     src/video/screen_renderer.hpp
     src/video/screen_renderer.cpp
+    src/video/encode.hpp
+    src/video/encode.cpp
 )
 if(WIN32)
     list(APPEND COMMON_SOURCES
@@ -90,6 +92,7 @@ qt_add_ui(jakki SOURCES ui/main.ui ui/connect.ui ui/textchannel.ui ui/settings.u
 
 compile_shader(jakki ui/shaders/screen.vert)
 compile_shader(jakki ui/shaders/screen.frag)
+compile_shader(jakki ui/shaders/bgra_to_nv12.comp)
 
 target_link_libraries(jakki PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets OpenSSL::SSL OpenSSL::Crypto nlohmann_json::nlohmann_json Threads::Threads)
 
