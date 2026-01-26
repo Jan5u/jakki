@@ -161,6 +161,51 @@ void Config::setTheme(const std::string &theme) {
     std::cout << "Theme set to: " << theme << std::endl;
 }
 
+static std::string join(const std::vector<std::string>& vec, const char* delim = ",") {
+    std::ostringstream oss;
+    for (size_t i = 0; i < vec.size(); ++i) {
+        if (i != 0) oss << delim;
+        oss << vec[i];
+    }
+    return oss.str();
+}
+
+static std::vector<std::string> split(const std::string& s, char delim = ',') {
+    std::vector<std::string> elems;
+    std::stringstream ss(s);
+    std::string item;
+    while (std::getline(ss, item, delim)) {
+        if (!item.empty()) elems.push_back(item);
+    }
+    return elems;
+}
+
+void Config::setSupportedNVIDIAEncoders(const std::vector<std::string>& encoders) {
+    data["Encoders"]["NVIDIA"] = join(encoders);
+    save();
+}
+
+void Config::setSupportedVulkanEncoders(const std::vector<std::string>& encoders) {
+    data["Encoders"]["Vulkan"] = join(encoders);
+    save();
+}
+
+std::vector<std::string> Config::getSupportedNVIDIAEncoders() const {
+    auto sectionIt = data.find("Encoders");
+    if (sectionIt == data.end()) return {};
+    auto keyIt = sectionIt->second.find("NVIDIA");
+    if (keyIt == sectionIt->second.end()) return {};
+    return split(keyIt->second);
+}
+
+std::vector<std::string> Config::getSupportedVulkanEncoders() const {
+    auto sectionIt = data.find("Encoders");
+    if (sectionIt == data.end()) return {};
+    auto keyIt = sectionIt->second.find("Vulkan");
+    if (keyIt == sectionIt->second.end()) return {};
+    return split(keyIt->second);
+}
+
 void Config::createDefaultConfig() {
     std::ofstream file(configPath);
     if (!file.is_open()) {

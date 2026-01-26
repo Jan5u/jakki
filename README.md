@@ -9,16 +9,32 @@
 
 #### Dependencies
 
+- Qt 6
+- OpenSSL
+- PipeWire
+- libopus
+- libnotify
+- QtKeychain
+- FFmpeg
+- XDG Desktop Portal
+- CMake (make)
+- Ninja (make)
+- nv-codec-headers (make) 
+- Vulkan-Headers (make)
+- nlohmann-json (make)
+- glslc/shaderc (make)
+
+
 Debian 13 / Ubuntu 25
 
 ```bash
-sudo apt install ninja-build qt6-base-dev libssl-dev libnotify-dev libpipewire-0.3-dev qtkeychain-qt6-dev libopus-dev nlohmann-json3-dev libavcodec-dev libavformat-dev
+sudo apt install ninja-build qt6-base-dev libssl-dev libnotify-dev libpipewire-0.3-dev qtkeychain-qt6-dev libopus-dev nlohmann-json3-dev libavcodec-dev libavformat-dev glslc libffmpeg-nvenc-dev xdg-desktop-portal
 ```
 
 Arch
 
 ```bash
-sudo pacman -S --needed ninja qt6-base openssl libnotify libpipewire qtkeychain-qt6 opus ffmpeg nlohmann-json
+sudo pacman -S --needed ninja qt6-base openssl libnotify libpipewire qtkeychain-qt6 opus ffmpeg ffnvcodec-headers xdg-desktop-portal nlohmann-json vulkan-headers shaderc
 ```
 
 Fedora

@@ -4,12 +4,15 @@
 #include "auth.hpp"
 #include "config.hpp"
 #include "network.hpp"
+#include "video/video.hpp"
+#include "video/vulkan_renderer.hpp"
 #include <QDebug>
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QLabel>
 #include <QMainWindow>
+#include <QMap>
 #include <QStandardItemModel>
 #include <QStyleFactory>
 #include <QWidgetAction>
@@ -40,10 +43,13 @@ class MainWindow : public QMainWindow {
     Auth authManager;
     Audio audioManager;
     Network networkManager;
+    Video videoManager;
     QStandardItemModel *model;
     QStandardItemModel *accountsModel;
     QWidget *settingsTab;
     QWidget *adminPanelTab;
+    VulkanWindow *vulkanWindow;
+    QWidget *vulkanTab;
     bool isInitialDeviceSetup = true;
     QString currentInputDeviceId;
     QString currentOutputDeviceId;
@@ -53,12 +59,16 @@ class MainWindow : public QMainWindow {
     bool validateOutputDevice();
     void sendAdminRequest(const QString &requestType);
 
+  public slots:
+    void onFrameQueued(int colorValue);
+
   private slots:
     void disconnect();
     void showConnectDialog();
     void showContextMenu(const QPoint &pos);
     void sendMessage();
     void sendMessage(const QString &channelName);
+    void showScreenShareDialog();
     void addChannels(const QStringList &channels);
     void onTreeViewItemClicked(const QModelIndex &index);
     void closeTab(int index);
