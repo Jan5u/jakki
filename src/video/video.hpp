@@ -16,6 +16,7 @@
 
 #include "../config.hpp"
 #include "video_impl.hpp"
+#include "decoder.hpp"
 
 class Network;
 
@@ -41,6 +42,7 @@ class Video {
     QWidget *createVulkanTab(QWidget *parent);
     void selectScreen();
     void startDecodeThread();
+    void setRenderer(ScreenRenderer *renderer);
     void receiveEncodedPacket(const std::vector<uint8_t>& packet);
     std::vector<std::string> getSupportedEncoders();
     std::vector<std::string> getSupportedNVIDIAEncoders();
@@ -49,26 +51,13 @@ class Video {
     std::vector<std::string> supportedVulkanEncoders;
 
   private:
-    AVFormatContext *input_ctx = nullptr;
-    AVStream *video = nullptr;
-    AVCodecContext *decoder_ctx = nullptr;
-    const AVCodec *decoder = nullptr;
-    AVPacket *packet = nullptr;
-    AVCodecParserContext *parser = nullptr;
-    AVHWDeviceType type;
-    AVPixelFormat hw_pix_fmt;
-    AVBufferRef *hw_device_ctx = nullptr;
-    std::jthread decodeThread;
     std::jthread nvidiaEncoderThread;
     std::jthread vulkanEncoderThread;
-    void decoderInit();
 
     VulkanWindow *m_vulkanWindow = nullptr;
     ScreenRenderer *m_renderer = nullptr;
     std::unique_ptr<VideoImpl> pImpl;
+    std::unique_ptr<Decoder> m_decoder;
     Network &m_network;
-    std::queue<std::vector<uint8_t>> packetQueue;
-    std::mutex queueMutex;
-    std::condition_variable queueCV;
-    bool shouldStopDecoding = false;
+    bool m_decodeThreadStartPending = false;
 };

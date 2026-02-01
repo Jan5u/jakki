@@ -9,14 +9,15 @@ void VulkanWidget::onFrameQueued(int colorValue) {
 }
 
 QVulkanWindowRenderer *VulkanWindow::createRenderer() {
-    return new VulkanRenderer(this); 
+    VulkanRenderer *renderer = new VulkanRenderer(this);
+    setRenderer(renderer);
+    emit rendererReady(renderer);
+    std::println("VulkanRenderer created, registered, and signal emitted");
+    return renderer;
 }
 
-extern ScreenRenderer *g_renderer;
-
 VulkanRenderer::VulkanRenderer(VulkanWindow *w) : ScreenRenderer(w) {
-    g_renderer = this;
-    std::println("VulkanRenderer created, global pointer set");
+    std::println("VulkanRenderer created");
 }
 
 void VulkanRenderer::initResources() {

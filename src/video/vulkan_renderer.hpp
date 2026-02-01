@@ -36,7 +36,13 @@ class VulkanWindow : public QVulkanWindow {
 
   public:
     QVulkanWindowRenderer *createRenderer() override;
+    ScreenRenderer *getRenderer() { return m_renderer; }
+    void setRenderer(ScreenRenderer *renderer) { m_renderer = renderer; }
 
   signals:
     void frameQueued(int colorValue);
+    void rendererReady(ScreenRenderer *renderer);
+
+  private:
+    ScreenRenderer *m_renderer = nullptr;
 };

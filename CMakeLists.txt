@@ -66,6 +66,8 @@ set(COMMON_SOURCES
     src/video/video.cpp
     src/video/video_impl.hpp
     src/video/video_impl.cpp
+    src/video/decoder.hpp
+    src/video/decoder.cpp
     src/video/vulkan_renderer.hpp
     src/video/vulkan_renderer.cpp
     src/video/screen_renderer.hpp
