@@ -22,7 +22,7 @@
         "widgets"
       ]
     },
-    "qtkeychain-qt6"
+    "qtkeychain-qt6",
     "shaderc"
   ]
 }
