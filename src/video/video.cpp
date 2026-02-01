@@ -25,7 +25,7 @@ Video::Video(Config& config, Network &network) : m_network(network) {
     supportedNVIDIAEncoders = config.getSupportedNVIDIAEncoders();
     supportedVulkanEncoders = config.getSupportedVulkanEncoders();
 
-    if (!supportedNVIDIAEncoders.empty() && !supportedVulkanEncoders.empty()) {
+    if (!supportedNVIDIAEncoders.empty() || !supportedVulkanEncoders.empty()) {
         std::println("Loaded supported encoders from config: NVIDIA={}, Vulkan={}", supportedNVIDIAEncoders.size(), supportedVulkanEncoders.size());
     } else {
         nvidiaEncoderThread = std::jthread([this, &config]() {
@@ -98,70 +98,33 @@ std::vector<std::string> Video::getSupportedNVIDIAEncoders() {
 }
 
 std::vector<std::string> Video::getSupportedVulkanEncoders() {
-    static const std::vector<std::string> supportedVulkanEncoders = {
-        "av1_vulkan",
-        "hevc_vulkan",
-        "h264_vulkan"
-    };
-    
     std::vector<std::string> availableEncoders;
-    
-    for (const auto& encoder_name : supportedVulkanEncoders) {
-        const AVCodec *codec = avcodec_find_encoder_by_name(encoder_name.c_str());
-        if (!codec) {
-            continue;
-        }
-
-        AVCodecContext *ctx = avcodec_alloc_context3(codec);
-        if (!ctx) {
-            continue;
-        }
-
-        AVBufferRef *hw_device_ref = nullptr;
-        int ret = av_hwdevice_ctx_create(&hw_device_ref, AV_HWDEVICE_TYPE_VULKAN, nullptr, nullptr, 0);
-        if (ret < 0) {
-            avcodec_free_context(&ctx);
-            continue;
-        }
-
-        AVBufferRef *hw_frames_ref = av_hwframe_ctx_alloc(hw_device_ref);
-        if (!hw_frames_ref) {
-            av_buffer_unref(&hw_device_ref);
-            avcodec_free_context(&ctx);
-            continue;
-        }
-
-        AVHWFramesContext *frames_ctx = (AVHWFramesContext*)hw_frames_ref->data;
-        frames_ctx->format = AV_PIX_FMT_VULKAN;
-        frames_ctx->sw_format = AV_PIX_FMT_NV12;
-        frames_ctx->width = 1920;
-        frames_ctx->height = 1080;
-
-        ret = av_hwframe_ctx_init(hw_frames_ref);
-        if (ret < 0) {
-            av_buffer_unref(&hw_frames_ref);
-            av_buffer_unref(&hw_device_ref);
-            avcodec_free_context(&ctx);
-            continue;
-        }
-
-        ctx->width  = 1920;
-        ctx->height = 1080;
-        ctx->pix_fmt = AV_PIX_FMT_VULKAN;
-        ctx->time_base = (AVRational){1, 25};
-        ctx->framerate = (AVRational){25, 1};
-        ctx->hw_frames_ctx = av_buffer_ref(hw_frames_ref);
-
-        ret = avcodec_open2(ctx, codec, NULL);
-        if (ret == 0) {
-            availableEncoders.push_back(encoder_name);
-        }
-
-        av_buffer_unref(&hw_frames_ref);
-        av_buffer_unref(&hw_device_ref);
-        avcodec_free_context(&ctx);
+    AVBufferRef *hw_device_ref = nullptr;
+    int ret = av_hwdevice_ctx_create(&hw_device_ref, AV_HWDEVICE_TYPE_VULKAN, nullptr, nullptr, 0);
+    if (ret < 0 || !hw_device_ref) {
+        return availableEncoders;
     }
-    
+
+    AVHWDeviceContext *dev_ctx = (AVHWDeviceContext*)hw_device_ref->data;
+    AVVulkanDeviceContext *vk_ctx = (AVVulkanDeviceContext*)dev_ctx->hwctx;
+
+    bool has_h264 = false, has_hevc = false, has_av1 = false;
+    for (int i = 0; i < vk_ctx->nb_enabled_dev_extensions; ++i) {
+        const char* ext = vk_ctx->enabled_dev_extensions[i];
+        if (strcmp(ext, "VK_KHR_video_encode_h264") == 0) {
+            has_h264 = true;
+        } else if (strcmp(ext, "VK_KHR_video_encode_h265") == 0) {
+            has_hevc = true;
+        } else if (strcmp(ext, "VK_KHR_video_encode_av1") == 0) {
+            has_av1 = true;
+        }
+    }
+
+    if (has_h264) availableEncoders.push_back("h264_vulkan");
+    if (has_hevc) availableEncoders.push_back("hevc_vulkan");
+    if (has_av1)  availableEncoders.push_back("av1_vulkan");
+
+    av_buffer_unref(&hw_device_ref);
     return availableEncoders;
 }
 
