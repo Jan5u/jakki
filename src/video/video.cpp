@@ -175,14 +175,6 @@ VulkanWindow* Video::createVulkanWindow() {
         };
         features.pNext = &dynamicRenderingLocalReadFeatures;
 
-        static VkPhysicalDeviceUnifiedImageLayoutsFeaturesKHR unifiedImageLayoutsFeatures = {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFIED_IMAGE_LAYOUTS_FEATURES_KHR,
-            .pNext = features.pNext,
-            .unifiedImageLayouts = VK_TRUE,
-            .unifiedImageLayoutsVideo = VK_TRUE
-        };
-        features.pNext = &unifiedImageLayoutsFeatures;
-
         static VkPhysicalDeviceTimelineSemaphoreFeatures timelineSemaphoreFeatures = {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES,
             .pNext = features.pNext,
