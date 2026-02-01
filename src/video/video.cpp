@@ -1,6 +1,7 @@
 #include "video.hpp"
 #include "screen_renderer.hpp"
 #include "vulkan_renderer.hpp"
+#include "../network.hpp"
 
 #ifdef _WIN32
 #include "dxgi_impl.hpp"
@@ -13,12 +14,12 @@ static AVBufferRef *hw_device_ctx = nullptr;
 static AVPixelFormat hw_pix_fmt;
 ScreenRenderer *g_renderer = nullptr;
 
-Video::Video(Config& config) {
+Video::Video(Config& config, Network &network) : m_network(network) {
 #ifdef _WIN32
     pImpl = std::make_unique<DxgiImpl>();
     std::println("Created DXGI video implementation");
 #else
-    pImpl = std::make_unique<VideoPipewireImpl>();
+    pImpl = std::make_unique<VideoPipewireImpl>(&network);
     std::println("Created PipeWire video implementation");
 #endif
     supportedNVIDIAEncoders = config.getSupportedNVIDIAEncoders();
@@ -51,6 +52,13 @@ void Video::selectScreen() {
 void Video::startDecodeThread() {
     decodeThread = std::jthread([this] { decoderInit(); });
     std::println("Decode thread started");
+}
+
+void Video::receiveEncodedPacket(const std::vector<uint8_t>& packetData) {
+    std::lock_guard<std::mutex> lock(queueMutex);
+    packetQueue.push(packetData);
+    queueCV.notify_one();
+    std::println("Queued encoded packet: {} bytes (queue size: {})", packetData.size(), packetQueue.size());
 }
 
 std::vector<std::string> Video::getSupportedNVIDIAEncoders() {
@@ -303,18 +311,7 @@ static int decode_write(AVCodecContext *avctx, AVPacket *packet)
             return ret;
         }
 
-        if (frame->format == hw_pix_fmt) {
-            static auto last_frame_time = std::chrono::steady_clock::now();
-            static const auto frame_duration = std::chrono::microseconds(16667);
-            
-            auto now = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(now - last_frame_time);
-            
-            if (elapsed < frame_duration) {
-                std::this_thread::sleep_for(frame_duration - elapsed);
-            }
-            last_frame_time = std::chrono::steady_clock::now();
-            
+        if (frame->format == hw_pix_fmt) {            
             extern ScreenRenderer *g_renderer;
             if (g_renderer) {
                 g_renderer->receiveDecodedFrame(frame);
@@ -328,8 +325,7 @@ static int decode_write(AVCodecContext *avctx, AVPacket *packet)
 }
 
 void Video::decoderInit() {
-    const char path[] = "./output.h264";
-    int video_stream, ret, i;
+    int ret, i;
 
     while ((type = av_hwdevice_iterate_types(type)) != AV_HWDEVICE_TYPE_NONE) {
         std::println("{}", av_hwdevice_get_type_name(type));
@@ -340,52 +336,17 @@ void Video::decoderInit() {
     packet = av_packet_alloc();
     if (!packet) {
         std::println("Failed to allocate AVPacket");
-    }
-
-    if (avformat_open_input(&input_ctx, path, NULL, NULL) != 0) {
-        std::println("Cannot open input file");
-    }
-
-    if (avformat_find_stream_info(input_ctx, NULL) < 0) {
-        std::println("Cannot find input stream information");
-    }
-
-    ret = av_find_best_stream(input_ctx, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
-    if (ret < 0) {
-        std::println("Cannot find a video stream in the input file");
-        avformat_close_input(&input_ctx);
         return;
     }
-    video_stream = ret;
-    
-    AVCodecID codec_id = input_ctx->streams[video_stream]->codecpar->codec_id;
-    const char *decoder_name = nullptr;
-    switch (codec_id) {
-        case AV_CODEC_ID_H264:
-            decoder_name = "h264_cuvid";
-            break;
-        case AV_CODEC_ID_HEVC:
-            decoder_name = "hevc_cuvid";
-            break;
-        case AV_CODEC_ID_VP9:
-            decoder_name = "vp9_cuvid";
-            break;
-        case AV_CODEC_ID_AV1:
-            decoder_name = "av1_cuvid";
-            break;
-        default:
-            std::println("Unsupported codec for NVIDIA hardware decoding");
-            avformat_close_input(&input_ctx);
-            return;
-    }
-    
+
+    const char *decoder_name = "h264_cuvid";
     decoder = avcodec_find_decoder_by_name(decoder_name);
     if (!decoder) {
         std::println("NVIDIA decoder '{}' not found, falling back to software", decoder_name);
-        decoder = avcodec_find_decoder(codec_id);
+        decoder = avcodec_find_decoder(AV_CODEC_ID_H264);
         if (!decoder) {
-            std::println("No decoder found for codec");
-            avformat_close_input(&input_ctx);
+            std::println("No decoder found for H.264");
+            av_packet_free(&packet);
             return;
         }
     } else {
@@ -397,7 +358,7 @@ void Video::decoderInit() {
         const AVCodecHWConfig *config = avcodec_get_hw_config(decoder, i);
         if (!config) {
             std::println("Decoder does not support device type: {}", av_hwdevice_get_type_name(type));
-            avformat_close_input(&input_ctx);
+            av_packet_free(&packet);
             return;
         }
         if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
@@ -411,17 +372,13 @@ void Video::decoderInit() {
     
     if (!found_config) {
         std::println("No compatible hardware config found");
-        avformat_close_input(&input_ctx);
+        av_packet_free(&packet);
         return;
     }
 
     if (!(decoder_ctx = avcodec_alloc_context3(decoder))) {
         std::println("could not allocate codec context");
-        return;
-    }
-
-    if ((ret = avcodec_parameters_to_context(decoder_ctx, input_ctx->streams[video_stream]->codecpar)) < 0) {
-        std::println("Failed to copy codec parameters to decoder context");
+        av_packet_free(&packet);
         return;
     }
 
@@ -429,31 +386,79 @@ void Video::decoderInit() {
 
     if (hw_decoder_init(decoder_ctx, type) < 0) {
         std::println("decoder init fail");
+        avcodec_free_context(&decoder_ctx);
+        av_packet_free(&packet);
         return;
     }
 
     if ((ret = avcodec_open2(decoder_ctx, decoder, nullptr)) < 0) {
         std::println("avcodec open2 fail");
+        avcodec_free_context(&decoder_ctx);
+        av_packet_free(&packet);
         return;
     }
 
-    std::println("decode start...");
-    while (ret >= 0) {
-        if ((ret = av_read_frame(input_ctx, packet)) < 0) {
+    parser = av_parser_init(AV_CODEC_ID_H264);
+    if (!parser) {
+        std::println("Failed to create H.264 parser");
+        avcodec_free_context(&decoder_ctx);
+        av_packet_free(&packet);
+        return;
+    }
+
+    std::println("Decoder and parser initialized, waiting for packets...");
+    
+    while (!shouldStopDecoding) {
+        std::unique_lock<std::mutex> lock(queueMutex);
+        queueCV.wait(lock, [this] { return !packetQueue.empty() || shouldStopDecoding; });
+        
+        if (shouldStopDecoding && packetQueue.empty()) {
             break;
         }
-
-        if (video_stream == packet->stream_index) {
-            ret = decode_write(decoder_ctx, packet);
+        
+        if (!packetQueue.empty()) {
+            std::vector<uint8_t> packetData = std::move(packetQueue.front());
+            packetQueue.pop();
+            lock.unlock();
+            
+            std::println("Processing packet: {} bytes", packetData.size());
+            
+            uint8_t *data = packetData.data();
+            size_t data_size = packetData.size();
+            
+            while (data_size > 0) {
+                av_packet_unref(packet);
+                
+                ret = av_parser_parse2(parser, decoder_ctx, &packet->data, &packet->size,
+                                      data, data_size, AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
+                
+                if (ret < 0) {
+                    std::println("Error parsing packet");
+                    break;
+                }
+                
+                data += ret;
+                data_size -= ret;
+                
+                if (packet->size > 0) {
+                    std::println("Parsed frame: {} bytes", packet->size);
+                    
+                    int decode_ret = decode_write(decoder_ctx, packet);
+                    if (decode_ret < 0) {
+                        std::println("Error decoding parsed packet");
+                    }
+                }
+            }
         }
-
-        av_packet_unref(packet);
     }
-    std::println("decoding end...");
+    
+    std::println("Decoder thread stopping...");
 
+    if (parser) {
+        av_parser_close(parser);
+    }
     av_packet_free(&packet);
     avcodec_free_context(&decoder_ctx);
-    avformat_close_input(&input_ctx);
 }
 
 

@@ -1,4 +1,5 @@
 #include "network.hpp"
+#include "video/video.hpp"
 
 enum class EventType { ServerInfo, Message, UserJoin, AdminResponse, Unknown };
 
@@ -177,6 +178,9 @@ void Network::connectQUIC(QString address, QString port) {
 
     eventStream = SSL_new_stream(ssl, 0);
     voiceStream = SSL_new_stream(ssl, 0);
+
+    streamScreenshareSend = SSL_new_stream(ssl, SSL_STREAM_FLAG_UNI);
+    streamScreenshareRecv = SSL_accept_stream(ssl, SSL_ACCEPT_STREAM_NO_BLOCK);
 
     // Perform authentication if authManager is available
     if (authManager) {
@@ -398,6 +402,16 @@ void Network::shutdown_ssl(SSL *ssl) {
 void Network::disconnectQUIC() {
     std::cout << "disconnectQUIC\n";
     if (connected) {
+        if (streamScreenshareSend) {
+            SSL_stream_conclude(streamScreenshareSend, 0);
+            SSL_free(streamScreenshareSend);
+            streamScreenshareSend = nullptr;
+        }
+        if (streamScreenshareRecv) {
+            SSL_stream_conclude(streamScreenshareRecv, 0);
+            SSL_free(streamScreenshareRecv);
+            streamScreenshareRecv = nullptr;
+        }
         SSL_stream_conclude(voiceStream, 0);
         SSL_stream_conclude(eventStream, 0);
         SSL_free(voiceStream);
@@ -408,6 +422,11 @@ void Network::disconnectQUIC() {
         std::cout << "connected=false" << std::endl;
         connected = false;
     }
+}
+
+void Network::setVideoManager(Video* video) {
+    videoManager = video;
+    std::cout << "Video manager set for Network" << std::endl;
 }
 
 void Network::sendVoicePackets(std::vector<uint8_t> encodedData) {
@@ -463,6 +482,98 @@ void Network::joinVoiceChannel(QString channelName) {
     } else {
         std::cerr << "Failed to read confirmation from voice stream" << std::endl;
     }
+}
+
+void Network::joinScreenShare(QString userName) {
+    std::cout << "Joining screenshare from user: " << userName.toStdString() << std::endl;
+    
+    json event;
+    event["type"] = "joinScreenshare";
+    event["user"] = userName.toStdString();
+    std::string eventStr = event.dump() + "\n";
+    
+    size_t written = 0;
+    int result = SSL_write_ex(eventStream, eventStr.c_str(), eventStr.length(), &written);
+    if (!result) {
+        std::cerr << "Failed to send joinScreenshare event\n";
+        return;
+    }
+    
+    std::cout << "Sent joinScreenshare event for user: " << userName.toStdString() << std::endl;
+    
+    recvScreenshareThread = std::jthread(&Network::receiveScreensharePackets, this);
+}
+
+void Network::sendScreensharePackets(std::vector<uint8_t> encodedData) {
+    if (!streamScreenshareSend) {
+        std::cerr << "Screenshare send stream not initialized\n";
+        return;
+    }
+    
+    int ret = SSL_write(streamScreenshareSend, encodedData.data(), encodedData.size());
+    if (ret <= 0) {
+        std::cerr << "Failed to send screenshare packet: SSL_write failed\n";
+    }
+}
+
+void Network::receiveScreensharePackets() {
+    std::cout << "Starting screenshare receive thread\n";
+    
+    if (!streamScreenshareRecv) {
+        std::cout << "Waiting for incoming screenshare stream...\n";
+        streamScreenshareRecv = SSL_accept_stream(ssl, 0);
+        if (!streamScreenshareRecv) {
+            std::cerr << "Failed to accept screenshare stream\n";
+            return;
+        }
+        std::cout << "Accepted screenshare stream\n";
+    }
+    
+    char buf[102400] = {};
+    size_t readbytes;
+    std::vector<uint8_t> buffer;
+    
+    while (SSL_read_ex(streamScreenshareRecv, buf, sizeof(buf), &readbytes)) {
+        std::cout << "Received screenshare packet: " << readbytes << " bytes\n";
+        
+        buffer.insert(buffer.end(), buf, buf + readbytes);
+        
+        size_t offset = 0;
+        while (offset + 4 <= buffer.size()) {
+            uint32_t packetSize = 
+                static_cast<uint32_t>(buffer[offset]) |
+                (static_cast<uint32_t>(buffer[offset + 1]) << 8) |
+                (static_cast<uint32_t>(buffer[offset + 2]) << 16) |
+                (static_cast<uint32_t>(buffer[offset + 3]) << 24);
+            
+            std::cout << "Screenshare packet size: " << packetSize << " bytes\n";
+            
+            if (offset + 4 + packetSize > buffer.size()) {
+                std::cout << "Incomplete screenshare packet, waiting for more data\n";
+                break;
+            }
+            
+            std::vector<uint8_t> packetData(
+                buffer.begin() + offset + 4,
+                buffer.begin() + offset + 4 + packetSize
+            );
+            
+            if (videoManager) {
+                videoManager->receiveEncodedPacket(packetData);
+            }
+            std::cout << "Received complete screenshare frame: " << packetData.size() << " bytes\n";
+            
+            offset += 4 + packetSize;
+        }
+        
+        if (offset > 0) {
+            buffer.erase(buffer.begin(), buffer.begin() + offset);
+        }
+        
+        std::memset(buf, 0, sizeof(buf));
+    }
+    
+    std::cout << "Stopping receiveScreensharePackets thread\n";
 }
 
 bool Network::performAuthentication() {

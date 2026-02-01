@@ -10,9 +10,14 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
 
 #include "../config.hpp"
 #include "video_impl.hpp"
+
+class Network;
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -29,12 +34,13 @@ class ScreenRenderer;
 
 class Video {
   public:
-    Video(Config &config);
+    Video(Config &config, Network &network);
     ~Video();
     VulkanWindow *createVulkanWindow();
     QWidget *createVulkanTab(QWidget *parent);
     void selectScreen();
     void startDecodeThread();
+    void receiveEncodedPacket(const std::vector<uint8_t>& packet);
     std::vector<std::string> getSupportedEncoders();
     std::vector<std::string> getSupportedNVIDIAEncoders();
     std::vector<std::string> getSupportedVulkanEncoders();
@@ -47,6 +53,7 @@ class Video {
     AVCodecContext *decoder_ctx = nullptr;
     const AVCodec *decoder = nullptr;
     AVPacket *packet = nullptr;
+    AVCodecParserContext *parser = nullptr;
     AVHWDeviceType type;
     AVPixelFormat hw_pix_fmt;
     AVBufferRef *hw_device_ctx = nullptr;
@@ -58,4 +65,9 @@ class Video {
     VulkanWindow *m_vulkanWindow = nullptr;
     ScreenRenderer *m_renderer = nullptr;
     std::unique_ptr<VideoImpl> pImpl;
+    Network &m_network;
+    std::queue<std::vector<uint8_t>> packetQueue;
+    std::mutex queueMutex;
+    std::condition_variable queueCV;
+    bool shouldStopDecoding = false;
 };

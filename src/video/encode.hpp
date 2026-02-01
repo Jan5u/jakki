@@ -25,9 +25,11 @@ extern "C" {
 #include <libavutil/opt.h>
 }
 
+class Network;
+
 class Encoder {
   public:
-    Encoder();
+    Encoder(Network* network);
     ~Encoder();
     void init();
     bool encodeDmaBufFrame(int dma_fd, int width, int height, int stride, uint64_t modifier);
@@ -43,6 +45,7 @@ class Encoder {
     FILE *output_file = nullptr;
     FILE *bgra_file = nullptr;
     FILE *nv12_file = nullptr;
+    Network* m_network = nullptr;
     
     CUcontext cuda_ctx = nullptr;
     CudaFunctions *cu = nullptr;

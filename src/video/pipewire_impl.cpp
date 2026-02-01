@@ -1,6 +1,6 @@
 #include "pipewire_impl.hpp"
 
-VideoPipewireImpl::VideoPipewireImpl() {
+VideoPipewireImpl::VideoPipewireImpl(Network* network) : encoder(network) {
     std::println("VideoPipewireImpl initialized");
     encoder.init();
 }
@@ -176,6 +176,7 @@ void VideoPipewireImpl::onCreateSessionResponse(GDBusConnection *connection, con
     g_variant_builder_add(&options_builder, "{sv}", "handle_token", g_variant_new_string(token));
     g_variant_builder_add(&options_builder, "{sv}", "types", g_variant_new_uint32(1 | 2)); // Monitor and Window
     g_variant_builder_add(&options_builder, "{sv}", "multiple", g_variant_new_boolean(FALSE));
+    g_variant_builder_add(&options_builder, "{sv}", "cursor_mode", g_variant_new_uint32(2)); // enable cursor
 
     GError *error = nullptr;
     GVariant *result = g_dbus_proxy_call_sync(

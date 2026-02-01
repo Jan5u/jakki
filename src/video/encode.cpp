@@ -1,6 +1,7 @@
 #include "encode.hpp"
+#include "../network.hpp"
 
-Encoder::Encoder() {}
+Encoder::Encoder(Network* network) : m_network(network) {}
 
 Encoder::~Encoder() {
     flush();
@@ -333,6 +334,7 @@ bool Encoder::initEncoder(int width, int height) {
     codec_ctx->framerate = {60, 1};
     codec_ctx->pix_fmt = AV_PIX_FMT_CUDA;
     codec_ctx->hw_frames_ctx = av_buffer_ref(hw_frames_ctx);
+    codec_ctx->gop_size = 60;
     
     av_opt_set(codec_ctx->priv_data, "preset", "p4", 0);
     av_opt_set(codec_ctx->priv_data, "tune", "ll", 0);
@@ -340,6 +342,9 @@ bool Encoder::initEncoder(int width, int height) {
     av_opt_set_int(codec_ctx->priv_data, "b", 8000000, 0);
     av_opt_set_int(codec_ctx->priv_data, "maxrate", 10000000, 0);
     av_opt_set_int(codec_ctx->priv_data, "bufsize", 16000000, 0);
+    av_opt_set_int(codec_ctx->priv_data, "forced-idr", 1, 0);
+    av_opt_set_int(codec_ctx->priv_data, "repeat-headers", 1, 0);
+    av_opt_set_int(codec_ctx->priv_data, "delay", 0, 0);
     
     av_log_set_level(AV_LOG_DEBUG);
 
@@ -773,7 +778,25 @@ bool Encoder::encodeFrame(FrameResources& res, uint64_t timeline_value) {
             return false;
         }
         
-        fwrite(packet->data, 1, packet->size, output_file);
+        if (output_file) {
+            fwrite(packet->data, 1, packet->size, output_file);
+        }
+        
+        if (m_network) {
+            std::vector<uint8_t> framedPacket;
+            uint32_t packetSize = packet->size;
+            
+            framedPacket.push_back(packetSize & 0xFF);
+            framedPacket.push_back((packetSize >> 8) & 0xFF);
+            framedPacket.push_back((packetSize >> 16) & 0xFF);
+            framedPacket.push_back((packetSize >> 24) & 0xFF);
+            
+            framedPacket.insert(framedPacket.end(), packet->data, packet->data + packet->size);
+            
+            m_network->sendScreensharePackets(framedPacket);
+            std::println("Sent encoded packet: {} bytes (payload: {})", framedPacket.size(), packet->size);
+        }
+        
         av_packet_unref(packet);
     }
     

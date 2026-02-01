@@ -6,6 +6,8 @@
 #include <print>
 #include <thread>
 
+class Network;
+
 #undef signals
 #include <gio/gio.h>
 #define signals Q_SIGNALS
@@ -25,7 +27,7 @@ struct PipewireData {
 
 class VideoPipewireImpl : public VideoImpl {
   public:
-    VideoPipewireImpl();
+    VideoPipewireImpl(Network* network);
     ~VideoPipewireImpl();
     void selectScreen() override;
     PipewireData pwdata;

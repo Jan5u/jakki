@@ -7,7 +7,7 @@
 #include "ui_adminpanel.h"
 #include "ui_screenshare.h"
 
-MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow), audioManager(networkManager, config), networkManager(audioManager, authManager), videoManager(config) {
+MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow), audioManager(networkManager, config), networkManager(audioManager, authManager), videoManager(config, networkManager) {
     ui->setupUi(this);
     connect(ui->actionQuit, &QAction::triggered, this, &QApplication::quit);
     connect(ui->actionDisconnect, &QAction::triggered, this, &MainWindow::disconnect);
@@ -60,6 +60,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         ui->tabWidget->addTab(vulkanTab, "Screen");
     }
     videoManager.startDecodeThread();
+    
+    networkManager.setVideoManager(&videoManager);
     
     // Initialize audio device combo boxes
     updateAudioDeviceComboBox();
@@ -284,6 +286,12 @@ void MainWindow::onTreeViewItemClicked(const QModelIndex &index) {
     
     QString channelName = item->text();
     qDebug() << "User clicked on channel:" << channelName;
+
+    if (item->parent()) {
+        qDebug() << "item parent:" << item->parent()->text();
+        networkManager.joinScreenShare(item->text());
+        return;
+    }
     
     if (channelName.startsWith("#")) {
         qDebug() << "Text channel selected:" << channelName;
