@@ -1,11 +1,14 @@
-#include "pipewire_impl.hpp"
+#include "capture_linux.hpp"
 
-VideoPipewireImpl::VideoPipewireImpl(Network* network) : encoder(network) {
-    std::println("VideoPipewireImpl initialized");
-    encoder.init();
+PipewireCapture::PipewireCapture(Network* network) {
+    std::println("PipewireCapture initialized");
+    encoder = DmaBufEncoder::create(EncoderType::NVENC_H264, network);
+    if (encoder) {
+        encoder->init();
+    }
 }
 
-VideoPipewireImpl::~VideoPipewireImpl() {
+PipewireCapture::~PipewireCapture() {
     if (m_session_handle) {
         g_free(m_session_handle);
     }
@@ -26,7 +29,7 @@ VideoPipewireImpl::~VideoPipewireImpl() {
     }
 }
 
-void VideoPipewireImpl::initPortal() {
+void PipewireCapture::initPortal() {
     GError *error = nullptr;
     m_connection = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error);
     if (error) {
@@ -59,7 +62,7 @@ void VideoPipewireImpl::initPortal() {
     std::println("XDG Desktop Portal ScreenCast interface initialized successfully");
 }
 
-void VideoPipewireImpl::selectScreen() {
+void PipewireCapture::selectScreen() {
     if (!m_screencast_proxy) {
         initPortal();
     }
@@ -122,11 +125,11 @@ void VideoPipewireImpl::selectScreen() {
     std::println("CreateSession called, waiting for response...");
 }
 
-void VideoPipewireImpl::onCreateSessionResponse(GDBusConnection *connection, const char *sender_name,
+void PipewireCapture::onCreateSessionResponse(GDBusConnection *connection, const char *sender_name,
                                           const char *object_path, const char *interface_name,
                                           const char *signal_name, GVariant *parameters,
                                           gpointer user_data) {
-    auto *self = static_cast<VideoPipewireImpl*>(user_data);
+    auto *self = static_cast<PipewireCapture*>(user_data);
     
     guint32 response;
     GVariant *results;
@@ -202,11 +205,11 @@ void VideoPipewireImpl::onCreateSessionResponse(GDBusConnection *connection, con
     std::println("SelectSources called, waiting for user selection...");
 }
 
-void VideoPipewireImpl::onSelectSourcesResponse(GDBusConnection *connection, const char *sender_name,
+void PipewireCapture::onSelectSourcesResponse(GDBusConnection *connection, const char *sender_name,
                                          const char *interface_name, const char *signal_name,
                                          const char *object_path, GVariant *parameters,
                                          gpointer user_data) {
-    auto *self = static_cast<VideoPipewireImpl*>(user_data);
+    auto *self = static_cast<PipewireCapture*>(user_data);
     
     guint32 response;
     GVariant *results;
@@ -273,11 +276,11 @@ void VideoPipewireImpl::onSelectSourcesResponse(GDBusConnection *connection, con
     std::println("Start called, waiting for stream information...");
 }
 
-void VideoPipewireImpl::onStartResponse(GDBusConnection *connection, const char *sender_name,
+void PipewireCapture::onStartResponse(GDBusConnection *connection, const char *sender_name,
                                  const char *object_path, const char *interface_name,
                                  const char *signal_name, GVariant *parameters,
                                  gpointer user_data) {
-    auto *self = static_cast<VideoPipewireImpl *>(user_data);
+    auto *self = static_cast<PipewireCapture *>(user_data);
 
     guint32 response;
     GVariant *results;
@@ -310,7 +313,7 @@ void VideoPipewireImpl::onStartResponse(GDBusConnection *connection, const char 
 }
 
 static void on_process(void *userdata) {
-    VideoPipewireImpl *self = static_cast<VideoPipewireImpl *>(userdata);
+    PipewireCapture *self = static_cast<PipewireCapture *>(userdata);
     PipewireData *data = &self->pwdata;
     struct pw_buffer *b;
     struct spa_buffer *buf;
@@ -350,7 +353,9 @@ static void on_process(void *userdata) {
             modifier = DRM_FORMAT_MOD_LINEAR;
         }
 
-        self->encoder.encodeDmaBufFrame(d->fd, width, height, stride, modifier);
+        if (self->encoder) {
+            self->encoder->encodeDmaBufFrame(d->fd, width, height, stride, modifier);
+        }
     } else if (d->type == SPA_DATA_MemPtr) {
         std::println("  type: MemPtr (data={})", (void *)d->data);
     }
@@ -358,7 +363,7 @@ static void on_process(void *userdata) {
 }
 
 static void on_stream_state_changed(void *userdata, enum pw_stream_state old, enum pw_stream_state state, const char *error) {
-    VideoPipewireImpl *self = static_cast<VideoPipewireImpl *>(userdata);
+    PipewireCapture *self = static_cast<PipewireCapture *>(userdata);
     std::println("Stream state changed: {} -> {}", pw_stream_state_as_string(old), pw_stream_state_as_string(state));
     if (error) {
         std::println(stderr, "Stream error: {}", error);
@@ -366,7 +371,7 @@ static void on_stream_state_changed(void *userdata, enum pw_stream_state old, en
 }
 
 static void on_param_changed(void *userdata, uint32_t id, const struct spa_pod *param) {
-    VideoPipewireImpl *self = static_cast<VideoPipewireImpl *>(userdata);
+    PipewireCapture *self = static_cast<PipewireCapture *>(userdata);
     PipewireData *data = &self->pwdata;
 
     if (param == NULL || id != SPA_PARAM_Format)
@@ -384,7 +389,7 @@ static void on_param_changed(void *userdata, uint32_t id, const struct spa_pod *
     std::println("res: {}x{} format: {} mod: {}", data->format.info.raw.size.width, data->format.info.raw.size.height, uint8_t(data->format.info.raw.format), data->format.info.raw.modifier);
 }
 
-void VideoPipewireImpl::openPipewireRemote() {
+void PipewireCapture::openPipewireRemote() {
     if (!m_session_handle) {
         std::println(stderr, "No session handle available");
         return;
@@ -436,7 +441,7 @@ void VideoPipewireImpl::openPipewireRemote() {
     g_variant_unref(result);
 }
 
-void VideoPipewireImpl::createPipewireNode() {
+void PipewireCapture::createPipewireNode() {
     pw_stream_events stream_events = {
         .version = PW_VERSION_STREAM_EVENTS,
         .state_changed = on_stream_state_changed,
@@ -499,5 +504,4 @@ void VideoPipewireImpl::createPipewireNode() {
 
     pw_stream_destroy(pwdata.stream);
     pw_main_loop_destroy(pwdata.loop);
-
 }

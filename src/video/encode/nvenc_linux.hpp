@@ -1,5 +1,7 @@
 #pragma once
 
+#include "encoder.hpp"
+
 #include <print>
 #include <cstdio>
 #include <vector>
@@ -27,15 +29,17 @@ extern "C" {
 
 class Network;
 
-class Encoder {
-  public:
-    Encoder(Network* network);
-    ~Encoder();
-    void init();
-    bool encodeDmaBufFrame(int dma_fd, int width, int height, int stride, uint64_t modifier);
-    void flush();
+class NvencLinuxEncoder : public DmaBufEncoder {
+public:
+    NvencLinuxEncoder(Network* network, EncoderType type = EncoderType::NVENC_H264);
+    ~NvencLinuxEncoder() override;
+    void init() override;
+    void flush() override;
+    bool isReady() const override;
+    std::string getName() const override;
+    bool encodeDmaBufFrame(int dma_fd, int width, int height, int stride, uint64_t modifier) override;
 
-  private:
+private:
     AVCodecContext *codec_ctx = nullptr;
     AVPacket *packet = nullptr;
     AVFrame *av_frame = nullptr;
@@ -46,6 +50,8 @@ class Encoder {
     FILE *bgra_file = nullptr;
     FILE *nv12_file = nullptr;
     Network* m_network = nullptr;
+    EncoderType m_encoder_type;
+    bool m_ready = false;
     
     CUcontext cuda_ctx = nullptr;
     CudaFunctions *cu = nullptr;
@@ -104,7 +110,7 @@ class Encoder {
     void cleanupFrameResources();
     void cleanupCompletedFrames();
     int acquireFrameResources();
-    bool initEncoder(int width, int height);
+    bool initFFmpegEncoder(int width, int height);
     bool initCUDA();
     bool setupCUDAInterop(FrameResources& res, int width, int height);
     bool encodeFrame(FrameResources& res, uint64_t timeline_value);
@@ -115,4 +121,6 @@ class Encoder {
     void transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout);
     void saveBGRAFrame(VkImage image, int width, int height);
     void saveNV12Frame(FrameResources& res, int width, int height);
+
+    const char* getFFmpegEncoderName() const;
 };

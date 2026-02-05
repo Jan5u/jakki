@@ -1,9 +1,9 @@
-#include "encode.hpp"
-#include "../network.hpp"
+#include "nvenc_linux.hpp"
+#include "../../network.hpp"
 
-Encoder::Encoder(Network* network) : m_network(network) {}
+NvencLinuxEncoder::NvencLinuxEncoder(Network* network, EncoderType type) : m_network(network), m_encoder_type(type) {}
 
-Encoder::~Encoder() {
+NvencLinuxEncoder::~NvencLinuxEncoder() {
     flush();
     
     if (codec_ctx) {
@@ -65,7 +65,24 @@ Encoder::~Encoder() {
     }
 }
 
-void Encoder::init() {
+bool NvencLinuxEncoder::isReady() const {
+    return m_ready;
+}
+
+std::string NvencLinuxEncoder::getName() const {
+    return Encoder::encoderTypeToName(m_encoder_type);
+}
+
+const char* NvencLinuxEncoder::getFFmpegEncoderName() const {
+    switch (m_encoder_type) {
+        case EncoderType::NVENC_H264: return "h264_nvenc";
+        case EncoderType::NVENC_HEVC: return "hevc_nvenc";
+        case EncoderType::NVENC_AV1:  return "av1_nvenc";
+        default: return "h264_nvenc";
+    }
+}
+
+void NvencLinuxEncoder::init() {
     vk_instance = new QVulkanInstance();
     vk_instance->setApiVersion(QVersionNumber(1, 3));
     vk_instance->setLayers({"VK_LAYER_KHRONOS_validation"});
@@ -250,10 +267,11 @@ void Encoder::init() {
         return;
     }
     
-    std::println("Compute pipeline, timeline semaphore, and CUDA initialized successfully");
+    m_ready = true;
+    std::println("NvencLinuxEncoder initialized successfully with {}", getName());
 }
 
-bool Encoder::initCUDA() {
+bool NvencLinuxEncoder::initCUDA() {
     int err = cuda_load_functions(&cu, nullptr);
     if (err < 0 || !cu) {
         std::println("Failed to load CUDA functions: {}", err);
@@ -270,28 +288,17 @@ bool Encoder::initCUDA() {
     return true;
 }
 
-bool Encoder::initEncoder(int width, int height) {
+bool NvencLinuxEncoder::initFFmpegEncoder(int width, int height) {
     output_file = fopen("./output.h264", "wb");
     if (!output_file) {
         std::println("Failed to open output file");
         return false;
     }
     
-    // bgra_file = fopen("./output.bgra", "wb");
-    // if (!bgra_file) {
-    //     std::println("Failed to open BGRA output file");
-    //     return false;
-    // }
-    
-    // nv12_file = fopen("./output.nv12", "wb");
-    // if (!nv12_file) {
-    //     std::println("Failed to open NV12 output file");
-    //     return false;
-    // }
-    
-    const AVCodec *codec = avcodec_find_encoder_by_name("h264_nvenc");
+    const char* encoder_name = getFFmpegEncoderName();
+    const AVCodec *codec = avcodec_find_encoder_by_name(encoder_name);
     if (!codec) {
-        std::println("h264_nvenc encoder not found");
+        std::println("{} encoder not found", encoder_name);
         return false;
     }
     
@@ -375,11 +382,11 @@ bool Encoder::initEncoder(int width, int height) {
         return false;
     }
 
-    std::println("H.264 NVENC encoder initialized: {}x{}, using FFmpeg CUDA context", width, height);
+    std::println("{} encoder initialized: {}x{}, using FFmpeg CUDA context", encoder_name, width, height);
     return true;
 }
 
-void Encoder::initFrameResources() {
+void NvencLinuxEncoder::initFrameResources() {
     VkCommandBufferAllocateInfo cmdAllocInfo{};
     cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     cmdAllocInfo.commandPool = vk_command_pool;
@@ -419,7 +426,7 @@ void Encoder::initFrameResources() {
     std::println("Frame resource pool initialized");
 }
 
-void Encoder::cleanupFrameResources() {
+void NvencLinuxEncoder::cleanupFrameResources() {
     for (auto& res : frame_resources) {
         if (res.cuda_ext_mem_y && cu) cu->cuDestroyExternalMemory(res.cuda_ext_mem_y);
         if (res.cuda_ext_mem_uv && cu) cu->cuDestroyExternalMemory(res.cuda_ext_mem_uv);
@@ -433,7 +440,7 @@ void Encoder::cleanupFrameResources() {
     frame_resources.clear();
 }
 
-int Encoder::acquireFrameResources() {
+int NvencLinuxEncoder::acquireFrameResources() {
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         if (!frame_resources[i].in_use) {
             frame_resources[i].in_use = true;
@@ -443,10 +450,10 @@ int Encoder::acquireFrameResources() {
     return -1;
 }
 
-bool Encoder::encodeDmaBufFrame(int dma_fd, int width, int height, int stride, uint64_t modifier) { 
+bool NvencLinuxEncoder::encodeDmaBufFrame(int dma_fd, int width, int height, int stride, uint64_t modifier) { 
     if (frame_resources.empty()) {
         initFrameResources();
-        if (!initEncoder(width, height)) {
+        if (!initFFmpegEncoder(width, height)) {
             return false;
         }
         current_width = width;
@@ -557,8 +564,6 @@ bool Encoder::encodeDmaBufFrame(int dma_fd, int width, int height, int stride, u
     
     vk_dev_funcs->vkQueueSubmit(vk_compute_queue, 1, &submitInfo, VK_NULL_HANDLE);
     
-    // saveBGRAFrame(inputImage, width, height);
-    
     PendingFrame pending;
     pending.timeline_value = vk_timeline_value;
     pending.frame_index = frame_idx;
@@ -568,14 +573,12 @@ bool Encoder::encodeDmaBufFrame(int dma_fd, int width, int height, int stride, u
     
     pending_frames.push_back(pending);
     
-    // saveNV12Frame(res, width, height);
-    
     encodeFrame(res, vk_timeline_value);
     
     return true;
 }
 
-bool Encoder::setupCUDAInterop(FrameResources& res, int width, int height) {
+bool NvencLinuxEncoder::setupCUDAInterop(FrameResources& res, int width, int height) {
     CUcontext oldCtx;
     cu->cuCtxPushCurrent(cuda_ctx);
     
@@ -680,7 +683,7 @@ bool Encoder::setupCUDAInterop(FrameResources& res, int width, int height) {
     return true;
 }
 
-bool Encoder::encodeFrame(FrameResources& res, uint64_t timeline_value) {
+bool NvencLinuxEncoder::encodeFrame(FrameResources& res, uint64_t timeline_value) {
     uint64_t current_value = 0;
     vk_dev_funcs->vkGetSemaphoreCounterValue(vk_device, vk_timeline_semaphore, &current_value);
     
@@ -803,7 +806,7 @@ bool Encoder::encodeFrame(FrameResources& res, uint64_t timeline_value) {
     return true;
 }
 
-void Encoder::cleanupCompletedFrames() {
+void NvencLinuxEncoder::cleanupCompletedFrames() {
     if (pending_frames.empty()) return;
     
     uint64_t current_value = 0;
@@ -822,7 +825,7 @@ void Encoder::cleanupCompletedFrames() {
     }
 }
 
-void Encoder::flush() {
+void NvencLinuxEncoder::flush() {
     if (pending_frames.empty()) return;
     
     VkSemaphoreWaitInfo waitInfo{};
@@ -836,7 +839,7 @@ void Encoder::flush() {
     cleanupCompletedFrames();
 }
 
-VkShaderModule Encoder::createShader(const QString &name) {
+VkShaderModule NvencLinuxEncoder::createShader(const QString &name) {
     QFile file(name);
     if (!file.open(QIODevice::ReadOnly)) {
         qWarning("Failed to read shader %s", qPrintable(name));
@@ -860,7 +863,7 @@ VkShaderModule Encoder::createShader(const QString &name) {
     return shaderModule;
 }
 
-VkImage Encoder::importDmaBufAsImage(int dma_fd, int width, int height, uint64_t modifier, VkDeviceMemory& memory) {
+VkImage NvencLinuxEncoder::importDmaBufAsImage(int dma_fd, int width, int height, uint64_t modifier, VkDeviceMemory& memory) {
     VkImageDrmFormatModifierExplicitCreateInfoEXT modifierInfo{};
     VkSubresourceLayout planeLayout{};
     
@@ -955,7 +958,7 @@ VkImage Encoder::importDmaBufAsImage(int dma_fd, int width, int height, uint64_t
     return image;
 }
 
-VkImage Encoder::createNV12Image(int width, int height, VkImageAspectFlags aspect, VkFormat format, VkDeviceMemory& memory) {
+VkImage NvencLinuxEncoder::createNV12Image(int width, int height, VkImageAspectFlags aspect, VkFormat format, VkDeviceMemory& memory) {
     VkExternalMemoryImageCreateInfo externalInfo{};
     externalInfo.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
     externalInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
@@ -1016,7 +1019,7 @@ VkImage Encoder::createNV12Image(int width, int height, VkImageAspectFlags aspec
     return image;
 }
 
-VkImageView Encoder::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags) {
+VkImageView NvencLinuxEncoder::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags) {
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = image;
@@ -1036,7 +1039,7 @@ VkImageView Encoder::createImageView(VkImage image, VkFormat format, VkImageAspe
     return imageView;
 }
 
-void Encoder::transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout) {
+void NvencLinuxEncoder::transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout) {
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = oldLayout;
@@ -1076,7 +1079,7 @@ void Encoder::transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image
     );
 }
 
-void Encoder::saveBGRAFrame(VkImage image, int width, int height) {
+void NvencLinuxEncoder::saveBGRAFrame(VkImage image, int width, int height) {
     if (!bgra_file) return;
     
     VkBufferCreateInfo bufferInfo{};
@@ -1182,7 +1185,7 @@ void Encoder::saveBGRAFrame(VkImage image, int width, int height) {
     vk_dev_funcs->vkDestroyBuffer(vk_device, stagingBuffer, nullptr);
 }
 
-void Encoder::saveNV12Frame(FrameResources& res, int width, int height) {
+void NvencLinuxEncoder::saveNV12Frame(FrameResources& res, int width, int height) {
     if (!nv12_file) return;
     
     VkSemaphoreWaitInfo waitInfo{};

@@ -15,8 +15,8 @@
 #include <condition_variable>
 
 #include "../config.hpp"
-#include "video_impl.hpp"
-#include "decoder.hpp"
+#include "capture/capture.hpp"
+#include "decode/decoder.hpp"
 
 class Network;
 
@@ -44,9 +44,6 @@ class Video {
     void startDecodeThread();
     void setRenderer(ScreenRenderer *renderer);
     void receiveEncodedPacket(const std::vector<uint8_t>& packet);
-    std::vector<std::string> getSupportedEncoders();
-    std::vector<std::string> getSupportedNVIDIAEncoders();
-    std::vector<std::string> getSupportedVulkanEncoders();
     std::vector<std::string> supportedNVIDIAEncoders;
     std::vector<std::string> supportedVulkanEncoders;
 
@@ -56,7 +53,7 @@ class Video {
 
     VulkanWindow *m_vulkanWindow = nullptr;
     ScreenRenderer *m_renderer = nullptr;
-    std::unique_ptr<VideoImpl> pImpl;
+    std::unique_ptr<Capture> pImpl;
     std::unique_ptr<Decoder> m_decoder;
     Network &m_network;
     bool m_decodeThreadStartPending = false;

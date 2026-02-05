@@ -1,5 +1,5 @@
 #include "decoder.hpp"
-#include "screen_renderer.hpp"
+#include "../render/screen_renderer.hpp"
 
 Decoder::Decoder() {}
 

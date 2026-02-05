@@ -5,7 +5,7 @@
 #include "config.hpp"
 #include "network.hpp"
 #include "video/video.hpp"
-#include "video/vulkan_renderer.hpp"
+#include "video/render/vulkan_renderer.hpp"
 #include <QDebug>
 #include <QDirIterator>
 #include <QFile>

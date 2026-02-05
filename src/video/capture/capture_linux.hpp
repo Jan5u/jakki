@@ -1,10 +1,13 @@
 #pragma once
 
-#include "video_impl.hpp"
-#include "encode.hpp"
+#include "capture.hpp"
+#include "../encode/encoder.hpp"
 
+#include <memory>
 #include <print>
 #include <thread>
+
+#include <libdrm/drm_fourcc.h>
 
 class Network;
 
@@ -25,15 +28,15 @@ struct PipewireData {
     struct spa_hook stream_listener;
 };
 
-class VideoPipewireImpl : public VideoImpl {
-  public:
-    VideoPipewireImpl(Network* network);
-    ~VideoPipewireImpl();
+class PipewireCapture : public Capture {
+public:
+    PipewireCapture(Network* network);
+    ~PipewireCapture();
     void selectScreen() override;
     PipewireData pwdata;
-    Encoder encoder;
+    std::unique_ptr<DmaBufEncoder> encoder;
 
-  private:
+private:
     void initPortal();
     GDBusConnection *m_connection = nullptr;
     GDBusProxy *m_screencast_proxy = nullptr;

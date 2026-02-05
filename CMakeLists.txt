@@ -64,31 +64,31 @@ set(COMMON_SOURCES
     src/config.cpp
     src/video/video.hpp
     src/video/video.cpp
-    src/video/video_impl.hpp
-    src/video/video_impl.cpp
-    src/video/decoder.hpp
-    src/video/decoder.cpp
-    src/video/vulkan_renderer.hpp
-    src/video/vulkan_renderer.cpp
-    src/video/screen_renderer.hpp
-    src/video/screen_renderer.cpp
-    src/video/encode.hpp
-    src/video/encode.cpp
+    src/video/decode/decoder.hpp
+    src/video/decode/decoder.cpp
+    src/video/render/vulkan_renderer.hpp
+    src/video/render/vulkan_renderer.cpp
+    src/video/render/screen_renderer.hpp
+    src/video/render/screen_renderer.cpp
+    src/video/encode/encoder.hpp
+    src/video/encode/encoder.cpp
+    src/video/capture/capture.hpp
+    src/video/capture/capture.cpp
 )
 if(WIN32)
     list(APPEND COMMON_SOURCES
         src/audio/wasapi_impl.hpp
         src/audio/wasapi_impl.cpp
-        src/video/dxgi_impl.hpp
-        src/video/dxgi_impl.cpp
         ui/jakki.rc
     )
 else()
     list(APPEND COMMON_SOURCES
         src/audio/pipewire_impl.hpp
         src/audio/pipewire_impl.cpp
-        src/video/pipewire_impl.hpp
-        src/video/pipewire_impl.cpp
+        src/video/capture/capture_linux.hpp
+        src/video/capture/capture_linux.cpp
+        src/video/encode/nvenc_linux.hpp
+        src/video/encode/nvenc_linux.cpp
     )
 endif()
 
