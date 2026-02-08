@@ -7,6 +7,7 @@
 #include <map>
 #include <sstream>
 #include <string>
+#include <vector>
 
 class Config {
   public:
@@ -20,6 +21,10 @@ class Config {
     void setOutputDevice(const std::string &deviceId);
     std::string getTheme() const;
     void setTheme(const std::string &theme);
+    void setSupportedNVIDIAEncoders(const std::vector<std::string>& encoders);
+    void setSupportedVulkanEncoders(const std::vector<std::string>& encoders);
+    std::vector<std::string> getSupportedNVIDIAEncoders() const;
+    std::vector<std::string> getSupportedVulkanEncoders() const;
 
   private:
     std::filesystem::path configPath;

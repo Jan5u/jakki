@@ -4,8 +4,10 @@
 #include "ui_main.h"
 #include "ui_textchannel.h"
 #include "ui_settings.h"
+#include "ui_adminpanel.h"
+#include "ui_screenshare.h"
 
-MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow), audioManager(networkManager, config), networkManager(audioManager) {
+MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow), audioManager(networkManager, config), networkManager(audioManager, authManager), videoManager(config, networkManager) {
     ui->setupUi(this);
     connect(ui->actionQuit, &QAction::triggered, this, &QApplication::quit);
     connect(ui->actionDisconnect, &QAction::triggered, this, &MainWindow::disconnect);
@@ -14,9 +16,15 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->treeView, &QTreeView::clicked, this, &MainWindow::onTreeViewItemClicked);
     connect(&networkManager, &Network::channelsReceived, this, &MainWindow::addChannels);
     connect(&networkManager, &Network::userJoinedChannel, this, &MainWindow::onUserJoinedChannel);
+    connect(&networkManager, &Network::authenticationFailed, this, [this](const QString& reason) {
+        qDebug() << "Authentication failed:" << reason;
+        // TODO: Show error dialog to user
+    });
+    connect(&networkManager, &Network::adminResponseReceived, this, &MainWindow::handleAdminResponse);
     connect(&audioManager, &Audio::deviceListChanged, this, &MainWindow::updateAudioDeviceComboBox);
     connect(&audioManager, &Audio::defaultDeviceChanged, this, &MainWindow::onDefaultDeviceChanged);
     connect(&audioManager, &Audio::volumeChanged, this, &MainWindow::onVolumeChanged);
+    connect(ui->actionShare_Screen, &QAction::triggered, this, &MainWindow::showScreenShareDialog);
 
     model = new QStandardItemModel(this);
     model->setHorizontalHeaderLabels({"Channels"});
@@ -28,6 +36,32 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     uiSettings = new Ui::SettingsTab;
     uiSettings->setupUi(settingsTab);
     ui->tabWidget->addTab(settingsTab, "Settings");
+
+    // Setup admin panel tab
+    adminPanelTab = new QWidget;
+    uiAdminPanel = new Ui::adminPanelTab;
+    uiAdminPanel->setupUi(adminPanelTab);
+    ui->tabWidget->addTab(adminPanelTab, "Admin Panel");
+    
+    // Connect admin panel signals
+    connect(uiAdminPanel->accountspushButton, &QPushButton::clicked, this, &MainWindow::requestUsersDatabase);
+    connect(uiAdminPanel->approvepushButton, &QPushButton::clicked, this, &MainWindow::approveSelectedUser);
+    
+    // Setup accounts table
+    accountsModel = new QStandardItemModel(this);
+    accountsModel->setHorizontalHeaderLabels({"ID", "Username", "Public Key", "Admin", "Approved", "Created", "Last Auth"});
+    uiAdminPanel->accountstableView->setModel(accountsModel);
+    
+
+    vulkanWindow = videoManager.createVulkanWindow();
+    connect(vulkanWindow, &VulkanWindow::frameQueued, this, &MainWindow::onFrameQueued);
+    vulkanTab = videoManager.createVulkanTab(this);
+    if (vulkanTab) {
+        ui->tabWidget->addTab(vulkanTab, "Screen");
+    }
+    videoManager.startDecodeThread();
+    
+    networkManager.setVideoManager(&videoManager);
     
     // Initialize audio device combo boxes
     updateAudioDeviceComboBox();
@@ -74,6 +108,80 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(uiSettings->StyleSelectComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onStyleChanged);
 }
 
+void MainWindow::showScreenShareDialog() {
+    QDialog dialog(this);
+    Ui::screenShareDialog uiDialog;
+    uiDialog.setupUi(&dialog);
+
+    videoManager.selectScreen();
+
+    QMap<QString, QString> nvidiaMap = {
+        { "H264", "h264_nvenc" },
+        { "H265", "hevc_nvenc" },
+        { "AV1",  "av1_nvenc" }
+    };
+
+    QMap<QString, QString> vulkanMap = {
+        { "H264", "h264_vulkan" },
+        { "H265", "hevc_vulkan" },
+        { "AV1",  "av1_vulkan" }
+    };
+
+    uiDialog.encodersComboBox->clear();
+    
+    bool hasNVIDIA = !videoManager.supportedNVIDIAEncoders.empty();
+    bool hasVulkan = !videoManager.supportedVulkanEncoders.empty();
+    
+    if (hasNVIDIA) {
+        uiDialog.encodersComboBox->addItem("NVIDIA", "nvidia");
+    }
+    if (hasVulkan) {
+        uiDialog.encodersComboBox->addItem("Vulkan", "vulkan");
+    }
+    
+    auto updateFormatsComboBox = [&]() {
+        uiDialog.formatsComboBox->clear();
+        
+        QString selectedEncoderType = uiDialog.encodersComboBox->currentData().toString();
+        const auto& supportedEncoders = (selectedEncoderType == "nvidia") 
+            ? videoManager.supportedNVIDIAEncoders 
+            : videoManager.supportedVulkanEncoders;
+        
+        const auto& encoderMap = (selectedEncoderType == "nvidia") ? nvidiaMap : vulkanMap;
+        
+        for (auto it = encoderMap.constBegin(); it != encoderMap.constEnd(); ++it) {
+            const QString& format = it.key();
+            const QString& codecName = it.value();
+            
+            bool isSupported = std::any_of(
+                supportedEncoders.begin(), 
+                supportedEncoders.end(),
+                [&codecName](const std::string& encoder) {
+                    return QString::fromStdString(encoder) == codecName;
+                }
+            );
+            
+            if (isSupported) {
+                uiDialog.formatsComboBox->addItem(format, codecName);
+            }
+        }
+    };
+    
+    updateFormatsComboBox();
+    
+    connect(uiDialog.encodersComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), [&updateFormatsComboBox]() { updateFormatsComboBox(); });
+
+    if (dialog.exec() == QDialog::Accepted) {
+        QString selectedEncoderType = uiDialog.encodersComboBox->currentText();
+        QString selectedFormat = uiDialog.formatsComboBox->currentText();
+        QString selectedCodec = uiDialog.formatsComboBox->currentData().toString();
+        
+        qDebug() << "Selected encoder type:" << selectedEncoderType;
+        qDebug() << "Selected format:" << selectedFormat;
+        qDebug() << "Selected codec:" << selectedCodec;
+    }
+}
+
 MainWindow::~MainWindow() {
     delete ui;
     delete uiSettings;
@@ -83,6 +191,10 @@ MainWindow::~MainWindow() {
 void MainWindow::disconnect() {
     qDebug("disconnect");
     networkManager.disconnectQUIC();
+    
+    // Clear the channel list
+    model->clear();
+    model->setHorizontalHeaderLabels({"Channels"});
 }
 
 void MainWindow::showConnectDialog() {
@@ -93,7 +205,18 @@ void MainWindow::showConnectDialog() {
     if (dialog.exec() == QDialog::Accepted) {
         QString address = uiDialog.lineEdit->text();
         QString port = uiDialog.lineEdit_2->text();
-        qDebug() << "Connect to:" << address << ":" << port;
+        QString username = uiDialog.usernamelineEdit_3->text();
+        
+        qDebug() << "Connect to:" << address << ":" << port << "as user:" << username;
+        
+        // Set username in auth manager
+        if (!username.isEmpty()) {
+            authManager.setUsername(username);
+        } else {
+            qDebug() << "Warning: No username provided, using default";
+            authManager.setUsername("default_user");
+        }
+        
         networkManager.connectToServer(address, port);
     }
 }
@@ -163,6 +286,12 @@ void MainWindow::onTreeViewItemClicked(const QModelIndex &index) {
     
     QString channelName = item->text();
     qDebug() << "User clicked on channel:" << channelName;
+
+    if (item->parent()) {
+        qDebug() << "item parent:" << item->parent()->text();
+        networkManager.joinScreenShare(item->text());
+        return;
+    }
     
     if (channelName.startsWith("#")) {
         qDebug() << "Text channel selected:" << channelName;
@@ -442,4 +571,86 @@ void MainWindow::onStyleChanged(int index) {
         qApp->setStyleSheet("");
         QApplication::setStyle(QStyleFactory::create(styleName));
     }
+}
+
+void MainWindow::requestUsersDatabase() {
+    qDebug() << "Requesting users database from server...";
+    sendAdminRequest("get_users");
+}
+
+void MainWindow::sendAdminRequest(const QString &requestType) {
+    if (!networkManager.isConnected()) {
+        qDebug() << "Cannot send admin request: not connected to server";
+        return;
+    }
+    
+    qDebug() << "Sending admin request:" << requestType;
+    networkManager.sendAdminMessage(requestType);
+}
+
+void MainWindow::handleAdminResponse(const QString& request, const QString& jsonData) {
+    qDebug() << "Handling admin response for:" << request;
+    
+    if (request == "get_users") {
+        // Parse JSON data
+        QJsonParseError error;
+        QJsonDocument doc = QJsonDocument::fromJson(jsonData.toUtf8(), &error);
+        
+        if (error.error != QJsonParseError::NoError) {
+            qDebug() << "JSON parse error:" << error.errorString();
+            return;
+        }
+        
+        if (!doc.isArray()) {
+            qDebug() << "Expected JSON array for user data";
+            return;
+        }
+        
+        QJsonArray users = doc.array();
+        
+        // Clear existing data
+        accountsModel->clear();
+        accountsModel->setHorizontalHeaderLabels({"ID", "Username", "Public Key", "Admin", "Approved", "Created", "Last Auth"});
+        
+        // Populate table with user data
+        for (const QJsonValue& userValue : users) {
+            if (!userValue.isObject()) continue;
+            
+            QJsonObject user = userValue.toObject();
+            
+            QList<QStandardItem*> row;
+            row << new QStandardItem(QString::number(user["id"].toInt()));
+            row << new QStandardItem(user["username"].toString());
+            row << new QStandardItem(user["public_key"].toString());
+            row << new QStandardItem(user["is_admin"].toBool() ? "Yes" : "No");
+            row << new QStandardItem(user["is_approved"].toBool() ? "Yes" : "No");
+            row << new QStandardItem(user["created_at"].toString());
+            row << new QStandardItem(user["last_auth"].toString());
+            
+            accountsModel->appendRow(row);
+        }
+        
+        qDebug() << "Populated accounts table with" << users.size() << "users";
+    }
+}
+
+void MainWindow::approveSelectedUser() {
+    QModelIndexList selectedIndexes = uiAdminPanel->accountstableView->selectionModel()->selectedRows();
+    
+    if (selectedIndexes.isEmpty()) {
+        qDebug() << "No user selected for approval";
+        return;
+    }
+    
+    // Get the ID from the first column of the selected row
+    QModelIndex selectedIndex = selectedIndexes.first();
+    QModelIndex idIndex = accountsModel->index(selectedIndex.row(), 0); // ID is in column 0
+    QString userId = accountsModel->data(idIndex).toString();
+    
+    qDebug() << "Approving user with ID:" << userId;
+    sendAdminRequest("approve_user:" + userId);
+}
+
+void MainWindow::onFrameQueued(int colorValue) {
+    // qDebug() << "Frame queued:" << colorValue;
 }

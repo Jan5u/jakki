@@ -2,5 +2,8 @@
     <qresource prefix="/">
         <file>images/icon.ico</file>
         <file>styles/default.qss</file>
+        <file>shaders/screen_vert.spv</file>
+        <file>shaders/screen_frag.spv</file>
+        <file>shaders/bgra_to_nv12_comp.spv</file>
     </qresource>
 </RCC>
