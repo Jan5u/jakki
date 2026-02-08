@@ -2,7 +2,6 @@
 #include "render/screen_renderer.hpp"
 #include "render/vulkan_renderer.hpp"
 #include "encode/encoder.hpp"
-#include "../network.hpp"
 
 #ifdef _WIN32
 #include "capture/capture_windows.hpp"

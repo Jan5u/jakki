@@ -4,6 +4,10 @@
 #include "nvenc_linux.hpp"
 #endif
 
+#ifdef _WIN32
+#include "nvenc_windows.hpp"
+#endif
+
 std::string Encoder::encoderTypeToName(EncoderType type) {
     switch (type) {
         case EncoderType::NVENC_H264: return "h264_nvenc";
@@ -51,8 +55,8 @@ std::vector<std::string> Encoder::getSupportedNVIDIAEncoders() {
         ctx->pix_fmt = AV_PIX_FMT_NV12;
         ctx->width = 1920;
         ctx->height = 1080;
-        ctx->time_base = (AVRational){1, 25};
-        ctx->framerate = (AVRational){25, 1};
+        ctx->time_base = AVRational{1, 25};
+        ctx->framerate = AVRational{25, 1};
 
         if (avcodec_open2(ctx, codec, NULL) == 0) {
             availableEncoders.push_back(encoder_name);

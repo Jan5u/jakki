@@ -7,6 +7,13 @@
 #include <mutex>
 #include <print>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <vulkan/vulkan_win32.h>
+#else
+#include <unistd.h>
+#endif
+
 extern "C" {
 #include <ffnvcodec/dynlink_loader.h>
 #include <libavutil/frame.h>
@@ -52,7 +59,11 @@ class ScreenRenderer : public QVulkanWindowRenderer {
     VkDescriptorSetLayout m_imageDescSetLayout = VK_NULL_HANDLE;
     VkDescriptorSet m_imageDescSet = VK_NULL_HANDLE;
     VkDescriptorImageInfo m_imageDescInfo = {};
+#ifdef _WIN32
+    PFN_vkGetMemoryWin32HandleKHR m_vkGetMemoryWin32HandleKHR = nullptr;
+#else
     PFN_vkGetMemoryFdKHR m_vkGetMemoryFdKHR = nullptr;
+#endif
     AVFrame *m_currentVideoFrame = nullptr;
     std::mutex m_frameMutex;
     bool m_hasVideoFrame = false;

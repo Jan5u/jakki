@@ -1018,7 +1018,11 @@ bool ScreenRenderer::ensureCudaInterop(AVFrame *frame, VkDevice dev, CUcontext c
 
     VkExternalMemoryBufferCreateInfo extInfo = {};
     extInfo.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO;
+#ifdef _WIN32
+    extInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+#else
     extInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+#endif
 
     VkBufferCreateInfo bufferInfo = {};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1038,7 +1042,11 @@ bool ScreenRenderer::ensureCudaInterop(AVFrame *frame, VkDevice dev, CUcontext c
 
     VkExportMemoryAllocateInfo exportInfo = {};
     exportInfo.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
+#ifdef _WIN32
+    exportInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+#else
     exportInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+#endif
 
     VkMemoryAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -1081,6 +1089,48 @@ bool ScreenRenderer::ensureCudaInterop(AVFrame *frame, VkDevice dev, CUcontext c
 
     m_cudaStagingSize = requiredSize;
 
+#ifdef _WIN32
+    if (!m_vkGetMemoryWin32HandleKHR) {
+        PFN_vkVoidFunction fp = m_window->vulkanInstance()->getInstanceProcAddr("vkGetMemoryWin32HandleKHR");
+        m_vkGetMemoryWin32HandleKHR = reinterpret_cast<PFN_vkGetMemoryWin32HandleKHR>(fp);
+    }
+
+    if (!m_vkGetMemoryWin32HandleKHR) {
+        QVulkanFunctions *instFuncs = m_window->vulkanInstance()->functions();
+        if (instFuncs) {
+            m_vkGetMemoryWin32HandleKHR = reinterpret_cast<PFN_vkGetMemoryWin32HandleKHR>(
+                instFuncs->vkGetDeviceProcAddr(dev, "vkGetMemoryWin32HandleKHR"));
+        }
+    }
+
+    if (!m_vkGetMemoryWin32HandleKHR) {
+        std::println("vkGetMemoryWin32HandleKHR not loaded via vkGetDeviceProcAddr");
+        return false;
+    }
+
+    VkMemoryGetWin32HandleInfoKHR handleInfo = {};
+    handleInfo.sType = VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR;
+    handleInfo.memory = m_cudaStagingMemory;
+    handleInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+
+    HANDLE winHandle = nullptr;
+    err = m_vkGetMemoryWin32HandleKHR(dev, &handleInfo, &winHandle);
+    if (err != VK_SUCCESS || !winHandle) {
+        std::println("vkGetMemoryWin32HandleKHR failed: {}", static_cast<int>(err));
+        cleanupCudaInterop();
+        return false;
+    }
+
+    m_cu->cuCtxPushCurrent(cuCtx);
+
+    CUDA_EXTERNAL_MEMORY_HANDLE_DESC memDesc = {};
+    memDesc.type = CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32;
+    memDesc.handle.win32.handle = winHandle;
+    memDesc.size = m_cudaStagingSize;
+
+    CUresult cuRes = m_cu->cuImportExternalMemory(&m_cudaExternalMemory, &memDesc);
+    CloseHandle(winHandle);
+#else
     if (!m_vkGetMemoryFdKHR) {
         PFN_vkVoidFunction fp = m_window->vulkanInstance()->getInstanceProcAddr("vkGetMemoryFdKHR");
         m_vkGetMemoryFdKHR = reinterpret_cast<PFN_vkGetMemoryFdKHR>(fp);
@@ -1121,6 +1171,7 @@ bool ScreenRenderer::ensureCudaInterop(AVFrame *frame, VkDevice dev, CUcontext c
 
     CUresult cuRes = m_cu->cuImportExternalMemory(&m_cudaExternalMemory, &memDesc);
     close(fd);
+#endif
     if (cuRes != CUDA_SUCCESS) {
         std::println("cuImportExternalMemory failed: {}", static_cast<int>(cuRes));
         m_cu->cuCtxPopCurrent(nullptr);

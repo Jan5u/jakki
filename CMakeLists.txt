@@ -79,6 +79,10 @@ if(WIN32)
     list(APPEND COMMON_SOURCES
         src/audio/wasapi_impl.hpp
         src/audio/wasapi_impl.cpp
+        src/video/capture/capture_windows.hpp
+        src/video/capture/capture_windows.cpp
+        src/video/encode/nvenc_windows.hpp
+        src/video/encode/nvenc_windows.cpp
         ui/jakki.rc
     )
 else()

@@ -44,3 +44,11 @@ public:
     static std::unique_ptr<DmaBufEncoder> create(EncoderType type, Network* network);
 };
 #endif
+
+#ifdef _WIN32
+class D3D11Encoder : public Encoder {
+public:
+    virtual bool encodeD3D11Frame(void* d3d11_texture) = 0;
+    static std::unique_ptr<D3D11Encoder> create(EncoderType type, Network* network);
+};
+#endif
