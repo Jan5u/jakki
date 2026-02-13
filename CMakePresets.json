@@ -22,7 +22,8 @@
                 "CMAKE_CXX_COMPILER": "cl.exe",
                 "CMAKE_TOOLCHAIN_FILE": "$env{USERPROFILE}/vcpkg/scripts/buildsystems/vcpkg.cmake",
                 "VCPKG_TARGET_TRIPLET": "x64-windows",
-                "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed"
+                "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed",
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/install"
             }
         },
         {
