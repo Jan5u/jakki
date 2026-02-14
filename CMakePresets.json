@@ -21,7 +21,8 @@
                 "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_CXX_COMPILER": "cl.exe",
                 "CMAKE_TOOLCHAIN_FILE": "$env{USERPROFILE}/vcpkg/scripts/buildsystems/vcpkg.cmake",
-                "VCPKG_TARGET_TRIPLET": "x64-windows",
+                "VCPKG_TARGET_TRIPLET": "x64-windows-release",
+                "VCPKG_HOST_TRIPLET": "x64-windows-release",
                 "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed",
                 "CMAKE_INSTALL_PREFIX": "${sourceDir}/install"
             }
@@ -34,7 +35,8 @@
                 "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_CXX_COMPILER": "cl.exe",
                 "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
-                "VCPKG_TARGET_TRIPLET": "x64-windows"
+                "VCPKG_TARGET_TRIPLET": "x64-windows-release",
+                "VCPKG_HOST_TRIPLET": "x64-windows-release"
             }
         },
         {
