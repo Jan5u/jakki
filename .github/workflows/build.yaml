@@ -12,6 +12,8 @@ jobs:
     env:
       VCPKG_ENABLE_METRICS: 0
     steps:
+      - uses: actions/checkout@v6
+
       - name: Setup CMake
         uses: lukka/get-cmake@latest
 
