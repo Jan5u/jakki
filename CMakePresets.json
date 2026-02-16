@@ -57,5 +57,21 @@
                 "CMAKE_CXX_COMPILER": "g++"
             }
         }
+    ],
+    "buildPresets": [
+        {
+            "name": "ci-vcpkg-build",
+            "description": "",
+            "displayName": "",
+            "configurePreset": "ci-vcpkg-release"
+        }
+    ],
+    "packagePresets": [
+        {
+            "name": "ci-vcpkg-package",
+            "description": "",
+            "displayName": "",
+            "configurePreset": "ci-vcpkg-release"
+        }
     ]
 }

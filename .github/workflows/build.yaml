@@ -26,5 +26,5 @@ jobs:
         uses: lukka/run-cmake@v10
         with:
           configurePreset: 'ci-vcpkg-release'
-          buildPreset: 'ci-vcpkg-release'
-          packagePreset: 'ci-vcpkg-release'
+          buildPreset: 'ci-vcpkg-build'
+          packagePreset: 'ci-vcpkg-package'
