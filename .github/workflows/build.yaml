@@ -14,6 +14,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Setup NSIS
+        uses: repolevedavaj/install-nsis@v1.1.0
+        with:
+          nsis-version: '3.11'
+
       - name: Setup CMake
         uses: lukka/get-cmake@latest
 
