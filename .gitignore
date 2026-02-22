@@ -1,5 +1,7 @@
 .cache
 .vscode
 build
+install
+package
 vcpkg_installed
 ui/shaders/*.spv

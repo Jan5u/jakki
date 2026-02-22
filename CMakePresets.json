@@ -21,8 +21,22 @@
                 "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_CXX_COMPILER": "cl.exe",
                 "CMAKE_TOOLCHAIN_FILE": "$env{USERPROFILE}/vcpkg/scripts/buildsystems/vcpkg.cmake",
-                "VCPKG_TARGET_TRIPLET": "x64-windows",
-                "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed"
+                "VCPKG_TARGET_TRIPLET": "x64-windows-release",
+                "VCPKG_HOST_TRIPLET": "x64-windows-release",
+                "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed",
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/install"
+            }
+        },
+        {
+            "name": "ci-vcpkg-release",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_CXX_COMPILER": "cl.exe",
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "VCPKG_TARGET_TRIPLET": "x64-windows-release",
+                "VCPKG_HOST_TRIPLET": "x64-windows-release"
             }
         },
         {
@@ -42,6 +56,22 @@
                 "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_CXX_COMPILER": "g++"
             }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "ci-vcpkg-build",
+            "description": "",
+            "displayName": "",
+            "configurePreset": "ci-vcpkg-release"
+        }
+    ],
+    "packagePresets": [
+        {
+            "name": "ci-vcpkg-package",
+            "description": "",
+            "displayName": "",
+            "configurePreset": "ci-vcpkg-release"
         }
     ]
 }
