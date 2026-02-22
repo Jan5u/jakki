@@ -19,6 +19,7 @@
 #include "audio/audio.hpp"
 #include "auth.hpp"
 
+#include <QJsonArray>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -44,6 +45,7 @@ class Network : public QObject {
         void sendScreensharePackets(std::vector<uint8_t> encodedData);
         bool isConnected() const { return connected; }
         void sendAdminMessage(const QString& requestType);
+        void sendTextMessage(const QString& jsonMessage);
         void setVideoManager(Video* video);
 
     signals:
@@ -51,6 +53,9 @@ class Network : public QObject {
         void userJoinedChannel(const QString& user, const QString& channel);
         void authenticationFailed(const QString& reason);
         void adminResponseReceived(const QString& request, const QString& jsonData);
+        void textMessageReceived(const QString& channel, const QString& sender, const QString& content, bool compressed);
+        void historyResponseReceived(const QString& channel, const QJsonArray& messages);
+        void emoteListReceived(const QJsonArray& emotes);
 
 
     private:

@@ -1,7 +1,8 @@
 #include "network.hpp"
 #include "video/video.hpp"
+#include <QJsonObject>
 
-enum class EventType { ServerInfo, Message, UserJoin, AdminResponse, Unknown };
+enum class EventType { ServerInfo, Message, UserJoin, AdminResponse, HistoryResponse, EmoteListResponse, Unknown };
 
 Network::Network() : audioManager(nullptr), authManager(nullptr) {}
 
@@ -244,6 +245,20 @@ void Network::sendAdminMessage(const QString &requestType) {
     }
 }
 
+void Network::sendTextMessage(const QString &jsonMessage) {
+    if (!connected || !eventStream) {
+        std::cerr << "Cannot send text message: not connected or no event stream\n";
+        return;
+    }
+    QByteArray messageBytes = jsonMessage.toUtf8();
+    messageBytes.append('\n');
+
+    int ret = SSL_write(eventStream, messageBytes.constData(), messageBytes.size());
+    if (ret <= 0) {
+        std::cerr << "Failed to send text message" << std::endl;
+    }
+}
+
 void Network::handleEventPacket(char *buf, size_t bufsize) {
     std::string data(buf, bufsize);
     size_t start = 0;
@@ -264,6 +279,8 @@ EventType getEventType(const std::string &type) {
     if (type == "Message") return EventType::Message;
     if (type == "UserJoin") return EventType::UserJoin;
     if (type == "admin_response") return EventType::AdminResponse;
+    if (type == "history_response") return EventType::HistoryResponse;
+    if (type == "emote_list_response") return EventType::EmoteListResponse;
     return EventType::Unknown;
 }
 
@@ -303,6 +320,46 @@ void Network::handleEventMessage(std::string msg) {
             QString jsonData = QString::fromStdString(j["data"].dump());
             std::cout << "Admin response for: " << request.toStdString() << std::endl;
             emit adminResponseReceived(request, jsonData);
+        }
+        break;
+    case EventType::Message:
+        if (j.contains("channel") && j.contains("user") && j.contains("content")) {
+            QString channel = QString::fromStdString(j["channel"].get<std::string>());
+            QString sender = QString::fromStdString(j["user"].get<std::string>());
+            QString content = QString::fromStdString(j["content"].get<std::string>());
+            bool compressed = j.value("compressed", false);
+            std::cout << "Text message from " << sender.toStdString() << " in " << channel.toStdString() << std::endl;
+            emit textMessageReceived(channel, sender, content, compressed);
+        }
+        break;
+    case EventType::HistoryResponse:
+        if (j.contains("channel") && j.contains("messages") && j["messages"].is_array()) {
+            QString channel = QString::fromStdString(j["channel"].get<std::string>());
+            QJsonArray messagesArray;
+            for (const auto &msg : j["messages"]) {
+                QJsonObject msgObj;
+                if (msg.contains("id")) msgObj["id"] = msg["id"].get<int>();
+                if (msg.contains("user")) msgObj["user"] = QString::fromStdString(msg["user"].get<std::string>());
+                if (msg.contains("content")) msgObj["content"] = QString::fromStdString(msg["content"].get<std::string>());
+                if (msg.contains("timestamp")) msgObj["timestamp"] = QString::fromStdString(msg["timestamp"].get<std::string>());
+                msgObj["compressed"] = msg.value("compressed", false);
+                messagesArray.append(msgObj);
+            }
+            std::cout << "History response for " << channel.toStdString() << ": " << messagesArray.size() << " messages" << std::endl;
+            emit historyResponseReceived(channel, messagesArray);
+        }
+        break;
+    case EventType::EmoteListResponse:
+        if (j.contains("emotes") && j["emotes"].is_array()) {
+            QJsonArray emotesArray;
+            for (const auto &emote : j["emotes"]) {
+                QJsonObject emoteObj;
+                if (emote.contains("name")) emoteObj["name"] = QString::fromStdString(emote["name"].get<std::string>());
+                if (emote.contains("data")) emoteObj["data"] = QString::fromStdString(emote["data"].get<std::string>());
+                emotesArray.append(emoteObj);
+            }
+            std::cout << "Emote list received: " << emotesArray.size() << " emotes" << std::endl;
+            emit emoteListReceived(emotesArray);
         }
         break;
     default:

@@ -23,6 +23,7 @@
       ]
     },
     "qtkeychain-qt6",
-    "shaderc"
+    "shaderc",
+    "zstd"
   ]
 }
