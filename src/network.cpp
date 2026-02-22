@@ -2,7 +2,7 @@
 #include "video/video.hpp"
 #include <QJsonObject>
 
-enum class EventType { ServerInfo, Message, UserJoin, AdminResponse, HistoryResponse, EmoteListResponse, Unknown };
+enum class EventType { ServerInfo, Message, UserJoin, AdminResponse, HistoryResponse, EmoteListResponse, TypingIndicator, Unknown };
 
 Network::Network() : audioManager(nullptr), authManager(nullptr) {}
 
@@ -281,6 +281,7 @@ EventType getEventType(const std::string &type) {
     if (type == "admin_response") return EventType::AdminResponse;
     if (type == "history_response") return EventType::HistoryResponse;
     if (type == "emote_list_response") return EventType::EmoteListResponse;
+    if (type == "typing_indicator") return EventType::TypingIndicator;
     return EventType::Unknown;
 }
 
@@ -360,6 +361,13 @@ void Network::handleEventMessage(std::string msg) {
             }
             std::cout << "Emote list received: " << emotesArray.size() << " emotes" << std::endl;
             emit emoteListReceived(emotesArray);
+        }
+        break;
+    case EventType::TypingIndicator:
+        if (j.contains("channel") && j.contains("user")) {
+            QString channel = QString::fromStdString(j["channel"].get<std::string>());
+            QString user = QString::fromStdString(j["user"].get<std::string>());
+            emit typingIndicatorReceived(channel, user);
         }
         break;
     default:

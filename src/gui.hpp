@@ -28,6 +28,7 @@
 #include <QScrollBar>
 #include <QSet>
 #include <QKeyEvent>
+#include <QTimer>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -75,7 +76,11 @@ class MainWindow : public QMainWindow {
     QString currentOutputDeviceId;
     QMap<QString, ChannelHistoryState> channelHistoryState;
     QSet<QString> pendingScrollToBottom;
+    QMap<QString, QTimer*> typingThrottleTimers;
+    QMap<QString, QMap<QString, QTimer*>> typingUserTimers;
     static constexpr int kHistoryPageSize = 50;
+    static constexpr int kTypingThrottleMs = 3000;
+    static constexpr int kTypingTimeoutMs = 5000;
     void openTextChannelTab(const QString &channelName);
     void updateAudioDeviceComboBox();
     bool validateInputDevice();
@@ -84,6 +89,7 @@ class MainWindow : public QMainWindow {
     void displayMessage(const QString &channel, const QString &sender, const QString &content, const QDateTime &timestamp);
     void onHistoryReceived(const QString &channel, const QList<Message> &messages);
     void onChatScrolled(int value);
+    void updateTypingLabel(const QString &channel);
     QString formatMessage(const QString &text);
 
   public slots:

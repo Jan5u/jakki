@@ -7,6 +7,9 @@
 Text::Text(Network &network) : networkManager(network) {
     connect(&networkManager, &Network::textMessageReceived, this, &Text::handleIncomingMessage);
     connect(&networkManager, &Network::historyResponseReceived, this, &Text::handleHistoryResponse);
+    connect(&networkManager, &Network::typingIndicatorReceived, this, [this](const QString &channel, const QString &user) {
+        emit typingIndicatorReceived(channel, user);
+    });
 }
 
 QByteArray Text::compress(const QByteArray &data) {
@@ -99,6 +102,13 @@ void Text::requestHistory(const QString &channel, int limit, int before) {
     j["channel"] = channel.toStdString();
     j["limit"] = limit;
     j["before"] = before;
+    networkManager.sendTextMessage(QString::fromStdString(j.dump()));
+}
+
+void Text::sendTypingIndicator(const QString &channel) {
+    json j;
+    j["type"] = "typing_indicator";
+    j["channel"] = channel.toStdString();
     networkManager.sendTextMessage(QString::fromStdString(j.dump()));
 }
 

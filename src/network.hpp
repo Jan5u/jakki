@@ -56,6 +56,7 @@ class Network : public QObject {
         void textMessageReceived(const QString& channel, const QString& sender, const QString& content, bool compressed);
         void historyResponseReceived(const QString& channel, const QJsonArray& messages);
         void emoteListReceived(const QJsonArray& emotes);
+        void typingIndicatorReceived(const QString& channel, const QString& user);
 
 
     private:

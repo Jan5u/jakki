@@ -23,6 +23,30 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(&networkManager, &Network::adminResponseReceived, this, &MainWindow::handleAdminResponse);
     connect(&textManager, &Text::messageReceived, this, &MainWindow::displayMessage);
     connect(&textManager, &Text::historyReceived, this, &MainWindow::onHistoryReceived);
+    connect(&textManager, &Text::typingIndicatorReceived, this, [this](const QString &channel, const QString &user) {
+        for (int i = 0; i < ui->tabWidget->count(); ++i) {
+            if (ui->tabWidget->tabText(i) == channel) {
+                QWidget *tab = ui->tabWidget->widget(i);
+                QLabel *typingLabel = tab->findChild<QLabel *>("typingLabel");
+                if (!typingLabel)
+                    break;
+
+                auto &userTimers = typingUserTimers[channel];
+                if (!userTimers.contains(user)) {
+                    QTimer *timer = new QTimer(tab);
+                    timer->setSingleShot(true);
+                    connect(timer, &QTimer::timeout, this, [this, channel, user]() {
+                        typingUserTimers[channel].remove(user);
+                        updateTypingLabel(channel);
+                    });
+                    userTimers[user] = timer;
+                }
+                userTimers[user]->start(kTypingTimeoutMs);
+                updateTypingLabel(channel);
+                break;
+            }
+        }
+    });
     connect(&networkManager, &Network::channelsReceived, &emoteManager, [this](const QStringList&) {
         emoteManager.requestEmotes();
     });
@@ -381,6 +405,19 @@ void MainWindow::openTextChannelTab(const QString &channelName) {
     messageInput->installEventFilter(this);
     messageInput->setProperty("channelName", channelName);
 
+    QTimer *typingThrottle = new QTimer(textChannelTab);
+    typingThrottle->setSingleShot(true);
+    typingThrottleTimers[channelName] = typingThrottle;
+    connect(messageInput->document(), &QTextDocument::contentsChanged, messageInput, [this, messageInput, channelName]() {
+        if (messageInput->toPlainText().isEmpty())
+            return;
+        QTimer *throttle = typingThrottleTimers.value(channelName);
+        if (throttle && !throttle->isActive()) {
+            textManager.sendTypingIndicator(channelName);
+            throttle->start(kTypingThrottleMs);
+        }
+    });
+
     EmoteCompleter *completer = new EmoteCompleter(emoteManager, textChannelTab);
     completer->attachToInput(messageInput);
 
@@ -611,6 +648,29 @@ void MainWindow::onHistoryReceived(const QString &channel, const QList<Message> 
             sb->setValue(oldValue + delta);
         }
         return;
+    }
+}
+
+void MainWindow::updateTypingLabel(const QString &channel) {
+    for (int i = 0; i < ui->tabWidget->count(); ++i) {
+        if (ui->tabWidget->tabText(i) == channel) {
+            QWidget *tab = ui->tabWidget->widget(i);
+            QLabel *typingLabel = tab->findChild<QLabel *>("typingLabel");
+            if (!typingLabel)
+                return;
+
+            QStringList users = typingUserTimers[channel].keys();
+            if (users.isEmpty()) {
+                typingLabel->clear();
+            } else if (users.size() == 1) {
+                typingLabel->setText(users.first() + " is typing...");
+            } else if (users.size() == 2) {
+                typingLabel->setText(users[0] + " and " + users[1] + " are typing...");
+            } else {
+                typingLabel->setText(QString::number(users.size()) + " people are typing...");
+            }
+            return;
+        }
     }
 }
 

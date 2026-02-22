@@ -24,6 +24,16 @@
       </widget>
      </item>
      <item>
+      <widget class="QLabel" name="typingLabel">
+       <property name="text">
+        <string/>
+       </property>
+       <property name="styleSheet">
+        <string>color: rgb(150, 150, 150); font-size: 11px; padding-left: 4px;</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <layout class="QHBoxLayout" name="horizontalLayout_3">
        <item>
         <widget class="QTextEdit" name="messageLineEdit">

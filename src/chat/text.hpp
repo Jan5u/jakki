@@ -25,11 +25,13 @@ class Text : public QObject {
     ~Text() = default;
 
     void sendMessage(const QString &channel, const QString &message);
+    void sendTypingIndicator(const QString &channel);
     void requestHistory(const QString &channel, int limit = 50, int before = 0);
 
   signals:
     void messageReceived(const QString &channel, const QString &sender, const QString &content, const QDateTime &timestamp);
     void historyReceived(const QString &channel, const QList<Message> &messages);
+    void typingIndicatorReceived(const QString &channel, const QString &user);
 
   private slots:
     void handleIncomingMessage(const QString &channel, const QString &sender, const QString &content, bool compressed);
