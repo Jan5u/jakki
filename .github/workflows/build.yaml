@@ -42,3 +42,9 @@ jobs:
           configurePreset: 'ci-vcpkg-release'
           buildPreset: 'ci-vcpkg-build'
           packagePreset: 'ci-vcpkg-package'
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: Jakki-Windows-Installer
+          path: package/*.exe
