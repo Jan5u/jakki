@@ -561,6 +561,12 @@ void MainWindow::closeTab(int index) {
 }
 
 void MainWindow::displayMessage(const QString &channel, const QString &sender, const QString &content, const QDateTime &timestamp) {
+    if (typingUserTimers.contains(channel) && typingUserTimers[channel].contains(sender)) {
+        typingUserTimers[channel][sender]->stop();
+        typingUserTimers[channel].remove(sender);
+        updateTypingLabel(channel);
+    }
+
     for (int i = 0; i < ui->tabWidget->count(); ++i) {
         if (ui->tabWidget->tabText(i) == channel) {
             QWidget *tab = ui->tabWidget->widget(i);
