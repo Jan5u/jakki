@@ -435,9 +435,6 @@ void MainWindow::openTextChannelTab(const QString &channelName) {
         messageInput->setMinimumHeight(newHeight);
         messageInput->setMaximumHeight(newHeight);
     });
-    emoteManager.registerEmotesInDocument(textBrowser->document());
-    connect(&emoteManager, &EmoteManager::emoteListReady, textBrowser,
-            [this, textBrowser]() { emoteManager.registerEmotesInDocument(textBrowser->document()); });
 
     QScrollBar *scrollBar = textBrowser->verticalScrollBar();
     scrollBar->setProperty("channelName", channelName);
@@ -569,7 +566,6 @@ void MainWindow::displayMessage(const QString &channel, const QString &sender, c
             QWidget *tab = ui->tabWidget->widget(i);
             QTextBrowser *textEdit = tab->findChild<QTextBrowser *>("textBrowser");
             if (textEdit) {
-                emoteManager.registerEmotesInDocument(textEdit->document());
                 QString time = timestamp.toString("yyyy-MM-dd hh:mm");
                 appendMessage(textEdit, time, sender.toHtmlEscaped(), formatMessage(content));
                 if (pendingScrollToBottom.remove(channel)) {
@@ -592,8 +588,6 @@ void MainWindow::onHistoryReceived(const QString &channel, const QList<Message> 
         QTextBrowser *textBrowser = tab->findChild<QTextBrowser *>("textBrowser");
         if (!textBrowser)
             return;
-
-        emoteManager.registerEmotesInDocument(textBrowser->document());
 
         auto &state = channelHistoryState[channel];
         state.loading = false;

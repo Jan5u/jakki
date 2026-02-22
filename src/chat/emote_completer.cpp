@@ -50,11 +50,8 @@ int EmoteCompleter::findColonStart() const {
     int cursorPos = cursor.position();
     QString text = inputWidget->toPlainText();
 
-    // Search backwards from cursor for an unmatched ':'
     for (int i = cursorPos - 1; i >= 0; --i) {
         if (text[i] == ':') {
-            // Check if there's a matching closing colon between this and cursor
-            // If we find another ':' between i+1 and cursorPos, this one is already matched
             bool isMatched = false;
             for (int j = i + 1; j < cursorPos; ++j) {
                 if (text[j] == ':') {
@@ -65,9 +62,8 @@ int EmoteCompleter::findColonStart() const {
             if (!isMatched) {
                 return i;
             }
-            return -1; // Found a colon pair, no open query
+            return -1;
         }
-        // Stop at whitespace before finding a colon
         if (text[i] == ' ' || text[i] == '\n' || text[i] == '\t') {
             return -1;
         }
@@ -123,8 +119,8 @@ void EmoteCompleter::updateCompletions(const QString &query) {
 
     for (const auto &result : results) {
         auto *item = new QListWidgetItem();
-        if (result.isCustom && !result.icon.isNull()) {
-            item->setIcon(QIcon(result.icon));
+        if (result.isCustom && !result.iconPath.isEmpty()) {
+            item->setIcon(QIcon(result.iconPath));
             item->setText(":" + result.name + ":");
         } else {
             // Unicode emoji: show the emoji character + name
@@ -154,12 +150,10 @@ void EmoteCompleter::positionPopup() {
     if (!inputWidget || !parentWidget())
         return;
 
-    // Position above the input widget, in parent-relative coordinates
     QPoint inputPos = inputWidget->mapTo(parentWidget(), QPoint(0, 0));
     int popupX = inputPos.x();
     int popupY = inputPos.y() - height();
 
-    // Make sure it doesn't go above the parent
     if (popupY < 0) {
         popupY = inputPos.y() + inputWidget->height();
     }
@@ -176,7 +170,6 @@ void EmoteCompleter::insertCompletion(int index) {
     bool isCustom = item->data(Qt::UserRole + 1).toBool();
     QString displayText = item->data(Qt::UserRole + 2).toString();
 
-    // Find the colon position and replace the ":query" with the completed emote
     int colonPos = findColonStart();
     if (colonPos < 0)
         return;
@@ -184,15 +177,12 @@ void EmoteCompleter::insertCompletion(int index) {
     QTextCursor cursor = inputWidget->textCursor();
     int cursorPos = cursor.position();
 
-    // Select from the colon to the current cursor position
     cursor.setPosition(colonPos);
     cursor.setPosition(cursorPos, QTextCursor::KeepAnchor);
 
     if (isCustom) {
-        // Insert ":name:" for custom emotes
         cursor.insertText(":" + name + ": ");
     } else {
-        // Insert unicode character for emoji
         cursor.insertText(displayText + " ");
     }
 
@@ -244,15 +234,11 @@ bool EmoteCompleter::eventFilter(QObject *obj, QEvent *event) {
             }
         }
 
-        // When completer is NOT visible, handle Enter for sending
         if (!isVisible()) {
             if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
                 if (!(keyEvent->modifiers() & Qt::ShiftModifier)) {
-                    // Regular Enter → trigger send (let the parent handle it)
-                    // We emit a custom signal by simulating what QLineEdit::returnPressed did
-                    return false; // Let gui.cpp's event filter handle this
+                    return false;
                 }
-                // Shift+Enter → insert newline (default QTextEdit behavior)
             }
         }
     }

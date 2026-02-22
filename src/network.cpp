@@ -259,21 +259,6 @@ void Network::sendTextMessage(const QString &jsonMessage) {
     }
 }
 
-void Network::handleEventPacket(char *buf, size_t bufsize) {
-    std::string data(buf, bufsize);
-    size_t start = 0;
-    size_t end;
-    while ((end = data.find('\n', start)) != std::string::npos) {
-        std::string msg = data.substr(start, end - start);
-        if (!msg.empty()) {
-            std::cout << "Received message: " << msg << std::endl;
-            handleEventMessage(msg);
-        }
-        start = end + 1;
-    }
-    std::memset(buf, 0, bufsize);
-}
-
 EventType getEventType(const std::string &type) {
     if (type == "ServerInfo") return EventType::ServerInfo;
     if (type == "Message") return EventType::Message;
@@ -286,9 +271,16 @@ EventType getEventType(const std::string &type) {
 }
 
 void Network::handleEventMessage(std::string msg) {
-    json j = json::parse(msg);
+    json j;
+    try {
+        j = json::parse(msg);
+    } catch (const json::parse_error &e) {
+        std::cerr << "JSON parse error: " << e.what() << std::endl;
+        return;
+    }
     if (!j.contains("type")) {
         std::cerr << "Invalid event\n";
+        return;
     }
     EventType type = getEventType(j["type"]);
     // match event type
@@ -379,9 +371,22 @@ void Network::handleEventMessage(std::string msg) {
 void Network::receiveEventPackets() {
     char buf[102400] = {};
     size_t readbytes;
+    std::string accumBuffer;
     while (SSL_read_ex(eventStream, buf, sizeof(buf), &readbytes)) {
         std::cout << "receiveEventPackets rb: " << readbytes << std::endl;
-        handleEventPacket(buf, sizeof(buf));
+        accumBuffer.append(buf, readbytes);
+
+        size_t pos;
+        while ((pos = accumBuffer.find('\n')) != std::string::npos) {
+            std::string msg = accumBuffer.substr(0, pos);
+            accumBuffer.erase(0, pos + 1);
+            if (!msg.empty()) {
+                std::cout << "Received message: " << msg.substr(0, 40) << "..." << std::endl;
+                handleEventMessage(msg);
+            }
+        }
+
+        std::memset(buf, 0, readbytes);
     }
     std::cout << "Stopping receiveEventPackets thread." << std::endl;
 }

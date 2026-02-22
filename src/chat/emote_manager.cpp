@@ -1,11 +1,20 @@
 #include "emote_manager.hpp"
+#include <QImage>
 #include <QJsonObject>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <QUrl>
 #include <iostream>
 
 EmoteManager::EmoteManager(Network &network) : networkManager(network) {
     connect(&networkManager, &Network::emoteListReceived, this, &EmoteManager::handleEmoteListResponse);
+    connect(this, &EmoteManager::emotesProcessed, this, [this](const QStringList &names) {
+        for (const auto &name : names) {
+            customEmotes.insert(name);
+        }
+        std::cout << "Loaded " << names.size() << " emotes from server" << std::endl;
+        emit emoteListReady();
+    });
     loadCachedEmotes();
 }
 
@@ -22,23 +31,14 @@ void EmoteManager::loadCachedEmotes() {
     QStringList filters = {"*.png"};
     for (const auto &file : dir.entryList(filters, QDir::Files)) {
         QString name = QFileInfo(file).baseName();
-        QPixmap pixmap(dir.filePath(file));
-        if (!pixmap.isNull()) {
-            customEmotes[name] = pixmap.scaled(24, 24, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        if (QFile::exists(dir.filePath(file))) {
+            customEmotes.insert(name);
         }
     }
 
     if (!customEmotes.isEmpty()) {
         std::cout << "Loaded " << customEmotes.size() << " cached emotes" << std::endl;
     }
-}
-
-void EmoteManager::saveCachedEmote(const QString &name, const QPixmap &pixmap) {
-    QDir dir(emotesCacheDir());
-    if (!dir.exists()) {
-        dir.mkpath(".");
-    }
-    pixmap.save(dir.filePath(name + ".png"), "PNG");
 }
 
 void EmoteManager::requestEmotes() {
@@ -48,6 +48,11 @@ void EmoteManager::requestEmotes() {
 }
 
 void EmoteManager::handleEmoteListResponse(const QJsonArray &emotes) {
+    struct RawEmote {
+        QString name;
+        QByteArray imageData;
+    };
+    QVector<RawEmote> rawEmotes;
     for (const auto &emoteVal : emotes) {
         QJsonObject obj = emoteVal.toObject();
         QString name = obj["name"].toString();
@@ -56,17 +61,29 @@ void EmoteManager::handleEmoteListResponse(const QJsonArray &emotes) {
         if (name.isEmpty() || data.isEmpty())
             continue;
 
-        QByteArray imageData = QByteArray::fromBase64(data.toLatin1());
-        QPixmap pixmap;
-        if (pixmap.loadFromData(imageData)) {
-            QPixmap scaled = pixmap.scaled(24, 24, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            customEmotes[name] = scaled;
-            saveCachedEmote(name, pixmap);
-        }
+        rawEmotes.append({name, QByteArray::fromBase64(data.toLatin1())});
     }
 
-    std::cout << "Loaded " << emotes.size() << " emotes from server" << std::endl;
-    emit emoteListReady();
+    QString cacheDir = emotesCacheDir();
+
+    emoteProcessThread = std::jthread([this, rawEmotes, cacheDir]() {
+        QStringList names;
+
+        QDir dir(cacheDir);
+        if (!dir.exists())
+            dir.mkpath(".");
+
+        for (const auto &raw : rawEmotes) {
+            QImage image;
+            if (image.loadFromData(raw.imageData)) {
+                QImage scaled = image.scaled(24, 24, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                scaled.save(dir.filePath(raw.name + ".png"), "PNG");
+                names.append(raw.name);
+            }
+        }
+
+        emit emotesProcessed(names);
+    });
 }
 
 QList<EmoteSearchResult> EmoteManager::search(const QString &query, int maxResults) const {
@@ -76,20 +93,19 @@ QList<EmoteSearchResult> EmoteManager::search(const QString &query, int maxResul
     if (lowerQuery.isEmpty())
         return results;
 
-    // Search custom emotes first (prefix matches first, then substring)
     QList<EmoteSearchResult> prefixMatches;
     QList<EmoteSearchResult> substringMatches;
 
-    for (auto it = customEmotes.constBegin(); it != customEmotes.constEnd(); ++it) {
+    for (const auto &name : customEmotes) {
         EmoteSearchResult result;
-        result.name = it.key();
-        result.displayText = ":" + it.key() + ":";
-        result.icon = it.value();
+        result.name = name;
+        result.displayText = ":" + name + ":";
+        result.iconPath = getEmotePath(name);
         result.isCustom = true;
 
-        if (it.key().toLower().startsWith(lowerQuery)) {
+        if (name.toLower().startsWith(lowerQuery)) {
             prefixMatches.append(result);
-        } else if (it.key().toLower().contains(lowerQuery)) {
+        } else if (name.toLower().contains(lowerQuery)) {
             substringMatches.append(result);
         }
     }
@@ -97,7 +113,6 @@ QList<EmoteSearchResult> EmoteManager::search(const QString &query, int maxResul
     results.append(prefixMatches);
     results.append(substringMatches);
 
-    // Search unicode emoji database
     prefixMatches.clear();
     substringMatches.clear();
 
@@ -106,7 +121,7 @@ QList<EmoteSearchResult> EmoteManager::search(const QString &query, int maxResul
         EmoteSearchResult result;
         result.name = emoji.name;
         result.displayText = emoji.unicode;
-        result.icon = QPixmap(); // No icon for unicode emoji
+        result.iconPath.clear();
         result.isCustom = false;
 
         if (emoji.name.toLower().startsWith(lowerQuery)) {
@@ -119,7 +134,6 @@ QList<EmoteSearchResult> EmoteManager::search(const QString &query, int maxResul
     results.append(prefixMatches);
     results.append(substringMatches);
 
-    // Limit results
     if (results.size() > maxResults) {
         results = results.mid(0, maxResults);
     }
@@ -127,7 +141,11 @@ QList<EmoteSearchResult> EmoteManager::search(const QString &query, int maxResul
     return results;
 }
 
-QPixmap EmoteManager::getEmoteImage(const QString &name) const { return customEmotes.value(name, QPixmap()); }
+QString EmoteManager::getEmotePath(const QString &name) const {
+    if (!customEmotes.contains(name))
+        return {};
+    return emotesCacheDir() + "/" + name + ".png";
+}
 
 QString EmoteManager::getEmojiUnicode(const QString &name) const {
     const auto &db = getEmojiDatabase();
@@ -149,21 +167,11 @@ bool EmoteManager::isEmoji(const QString &name) const {
     return false;
 }
 
-void EmoteManager::registerEmotesInDocument(QTextDocument *doc) const {
-    if (!doc)
-        return;
-    for (auto it = customEmotes.constBegin(); it != customEmotes.constEnd(); ++it) {
-        QUrl resourceUrl("emote://" + it.key());
-        doc->addResource(QTextDocument::ImageResource, resourceUrl, it.value());
-    }
-}
-
 QString EmoteManager::processEmoteCodes(const QString &text) const {
     static QRegularExpression emoteRegex(R"(:([a-zA-Z0-9_]+):)");
     QString result = text;
 
     auto matchIt = emoteRegex.globalMatch(result);
-    // Process matches in reverse to preserve positions
     QList<QRegularExpressionMatch> matches;
     while (matchIt.hasNext()) {
         matches.append(matchIt.next());
@@ -174,15 +182,13 @@ QString EmoteManager::processEmoteCodes(const QString &text) const {
         QString emoteName = match.captured(1);
 
         if (isCustomEmote(emoteName)) {
-            // Replace with <img> tag for custom emotes
-            QString imgTag = QString(R"(<img src="emote://%1" width="24" height="24" alt=":%1:">)").arg(emoteName);
+            QString path = QUrl::fromLocalFile(getEmotePath(emoteName)).toString();
+            QString imgTag = QString(R"(<img src="%1" width="24" height="24" alt=":%2:">)").arg(path, emoteName);
             result.replace(match.capturedStart(), match.capturedLength(), imgTag);
         } else if (isEmoji(emoteName)) {
-            // Replace with unicode character
             QString unicode = getEmojiUnicode(emoteName);
             result.replace(match.capturedStart(), match.capturedLength(), unicode);
         }
-        // Leave unknown :codes: as-is
     }
 
     return result;

@@ -83,7 +83,6 @@ class Network : public QObject {
         void receiveEventPackets();
         void receiveVoicePackets();
         void receiveScreensharePackets();
-        void handleEventPacket(char *buf, size_t bufsize);
         void handleEventMessage(std::string msg); 
         bool performAuthentication();
         static BIO *create_socket_bio(const char *hostname, const char *port, int family, BIO_ADDR **peer_addr);

@@ -4,18 +4,17 @@
 #include "emoji_data.hpp"
 #include <QDir>
 #include <QJsonArray>
-#include <QMap>
 #include <QObject>
-#include <QPixmap>
+#include <QSet>
 #include <QString>
-#include <QTextDocument>
+#include <thread>
 
 class Network;
 
 struct EmoteSearchResult {
     QString name;
-    QString displayText; // Unicode char for emoji, ":name:" for custom
-    QPixmap icon;        // Preview icon (empty for unicode emoji)
+    QString displayText;
+    QString iconPath;
     bool isCustom;
 };
 
@@ -28,23 +27,23 @@ class EmoteManager : public QObject {
 
     void requestEmotes();
     QList<EmoteSearchResult> search(const QString &query, int maxResults = 8) const;
-    QPixmap getEmoteImage(const QString &name) const;
+    QString getEmotePath(const QString &name) const;
     QString getEmojiUnicode(const QString &name) const;
     bool isCustomEmote(const QString &name) const;
     bool isEmoji(const QString &name) const;
-    void registerEmotesInDocument(QTextDocument *doc) const;
     QString processEmoteCodes(const QString &text) const;
 
   signals:
     void emoteListReady();
+    void emotesProcessed(QStringList names);
 
   private slots:
     void handleEmoteListResponse(const QJsonArray &emotes);
 
   private:
     Network &networkManager;
-    QMap<QString, QPixmap> customEmotes;
+    QSet<QString> customEmotes;
+    std::jthread emoteProcessThread;
     QString emotesCacheDir() const;
     void loadCachedEmotes();
-    void saveCachedEmote(const QString &name, const QPixmap &pixmap);
 };
