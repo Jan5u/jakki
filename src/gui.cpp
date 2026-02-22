@@ -132,19 +132,10 @@ static QString markdownToHtml(const QString &text) {
     return html;
 }
 
-static bool hasBlockElements(const QString &html) {
-    return html.contains(QLatin1String("<pre")) || html.contains(QLatin1String("<table")) || html.contains(QLatin1String("<blockquote")) ||
-           html.contains(QLatin1String("<ul")) || html.contains(QLatin1String("<ol")) || html.contains(QLatin1String("<h1")) ||
-           html.contains(QLatin1String("<h2")) || html.contains(QLatin1String("<h3"));
-}
-
 static void appendMessage(QTextBrowser *browser, const QString &time, const QString &sender, const QString &formattedContent) {
-    if (hasBlockElements(formattedContent)) {
-        browser->append(QString("<p style=\"margin-top:8px; margin-bottom:0px;\">[%1] %2:</p>").arg(time, sender));
-        browser->append(formattedContent);
-    } else {
-        browser->append(QString("<p style=\"margin-top:8px; margin-bottom:0px;\">[%1] %2: %3</p>").arg(time, sender, formattedContent));
-    }
+    browser->append(QString("<p style=\"margin:0px; line-height:16px;\">&nbsp;</p><p style=\"margin:0px;\"><b>%1</b> <span "
+                            "style=\"color:gray;\">%2</span></p><p style=\"margin:0px;\">%3</p>")
+                        .arg(sender, time, formattedContent));
 }
 
 QString MainWindow::formatMessage(const QString &text) {
@@ -523,7 +514,7 @@ void MainWindow::displayMessage(const QString &channel, const QString &sender, c
             QTextBrowser *textEdit = tab->findChild<QTextBrowser *>("textBrowser");
             if (textEdit) {
                 emoteManager.registerEmotesInDocument(textEdit->document());
-                QString time = timestamp.toString("hh:mm");
+                QString time = timestamp.toString("yyyy-MM-dd hh:mm");
                 appendMessage(textEdit, time, sender.toHtmlEscaped(), formatMessage(content));
                 if (pendingScrollToBottom.remove(channel)) {
                     QScrollBar *sb = textEdit->verticalScrollBar();
@@ -571,7 +562,7 @@ void MainWindow::onHistoryReceived(const QString &channel, const QList<Message> 
 
         if (isInitialLoad) {
             for (const auto &msg : messages) {
-                QString time = msg.timestamp.toString("hh:mm");
+                QString time = msg.timestamp.toString("yyyy-MM-dd hh:mm");
                 appendMessage(textBrowser, time, msg.sender.toHtmlEscaped(), formatMessage(msg.content));
             }
             QScrollBar *sb = textBrowser->verticalScrollBar();
@@ -583,16 +574,12 @@ void MainWindow::onHistoryReceived(const QString &channel, const QList<Message> 
 
             QString prependHtml;
             for (const auto &msg : messages) {
-                QString time = msg.timestamp.toString("hh:mm");
+                QString time = msg.timestamp.toString("yyyy-MM-dd hh:mm");
                 QString formattedContent = formatMessage(msg.content);
                 QString senderEscaped = msg.sender.toHtmlEscaped();
-                if (hasBlockElements(formattedContent)) {
-                    prependHtml +=
-                        QString("<p style=\"margin-top:8px; margin-bottom:0px;\">[%1] %2:</p>%3").arg(time, senderEscaped, formattedContent);
-                } else {
-                    prependHtml +=
-                        QString("<p style=\"margin-top:8px; margin-bottom:0px;\">[%1] %2: %3</p>").arg(time, senderEscaped, formattedContent);
-                }
+                prependHtml += QString("<p style=\"margin:0px; line-height:16px;\">&nbsp;</p><p style=\"margin:0px;\"><b>%1</b> <span "
+                                       "style=\"color:gray;\">%2</span></p><p style=\"margin:0px;\">%3</p>")
+                                   .arg(senderEscaped, time, formattedContent);
             }
 
             QTextCursor cursor(textBrowser->document());
