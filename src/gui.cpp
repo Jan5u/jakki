@@ -385,12 +385,31 @@ void MainWindow::openTextChannelTab(const QString &channelName) {
     completer->attachToInput(messageInput);
 
     QTextBrowser *textBrowser = uiTextChannel.textBrowser;
+
+    const int inputMinH = 36;
+    const int inputMaxH = 150;
+    connect(messageInput->document(), &QTextDocument::contentsChanged, messageInput, [messageInput, inputMinH, inputMaxH]() {
+        QTextDocument *doc = messageInput->document();
+        doc->setTextWidth(messageInput->viewport()->width());
+        int docHeight = static_cast<int>(doc->size().height());
+        int frameMargins = messageInput->frameWidth() * 2;
+        int contentMargins = messageInput->contentsMargins().top() + messageInput->contentsMargins().bottom();
+        int newHeight = qBound(inputMinH, docHeight + frameMargins + contentMargins, inputMaxH);
+        messageInput->setMinimumHeight(newHeight);
+        messageInput->setMaximumHeight(newHeight);
+    });
     emoteManager.registerEmotesInDocument(textBrowser->document());
-    connect(&emoteManager, &EmoteManager::emoteListReady, textBrowser, [this, textBrowser]() { emoteManager.registerEmotesInDocument(textBrowser->document()); });
+    connect(&emoteManager, &EmoteManager::emoteListReady, textBrowser,
+            [this, textBrowser]() { emoteManager.registerEmotesInDocument(textBrowser->document()); });
 
     QScrollBar *scrollBar = textBrowser->verticalScrollBar();
     scrollBar->setProperty("channelName", channelName);
     connect(scrollBar, &QScrollBar::valueChanged, this, &MainWindow::onChatScrolled);
+    connect(scrollBar, &QScrollBar::rangeChanged, textBrowser, [scrollBar](int, int max) {
+        if (scrollBar->value() >= max - 20 || max <= 0) {
+            scrollBar->setValue(max);
+        }
+    });
 
     int tabIndex = ui->tabWidget->addTab(textChannelTab, channelName);
     ui->tabWidget->setCurrentIndex(tabIndex);
