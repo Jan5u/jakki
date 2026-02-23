@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.30)
-project(jakki VERSION 0.2 LANGUAGES CXX)
+project(jakki VERSION 0.2.0 LANGUAGES CXX HOMEPAGE_URL https://github.com/Jan5u/jakki)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -117,9 +117,45 @@ compile_shader(jakki ui/shaders/bgra_to_nv12.comp)
 target_link_libraries(jakki PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6Keychain::Qt6Keychain OpenSSL::SSL OpenSSL::Crypto nlohmann_json::nlohmann_json Threads::Threads)
 
 if(WIN32)
+    set_target_properties(jakki PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)
     target_link_libraries(jakki PRIVATE Opus::opus ${FFMPEG_LIBRARIES} zstd::libzstd)
     add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD COMMAND Qt6::windeployqt --qmldir "${CMAKE_CURRENT_SOURCE_DIR}" "$<TARGET_FILE:${CMAKE_PROJECT_NAME}>" ) 
 elseif(UNIX)
     target_link_libraries(jakki PRIVATE ${OPUS_LIBRARIES} ${PIPEWIRE_LIBRARIES} ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${LIBNOTIFY_LIBRARIES} ${GIO_LIBRARIES} ${ZSTD_LIBRARIES})
     target_include_directories(jakki PRIVATE ${GIO_INCLUDE_DIRS})
 endif()
+
+install(TARGETS jakki
+    BUNDLE  DESTINATION .
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+if(WIN32)
+    install(CODE [[
+        file(GLOB DLL_FILES "$<TARGET_FILE_DIR:jakki>/*.dll")
+        file(INSTALL ${DLL_FILES} DESTINATION "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/bin")
+    ]])
+endif()
+
+qt_generate_deploy_app_script(
+    TARGET jakki
+    OUTPUT_SCRIPT deploy_script
+)
+install(SCRIPT ${deploy_script})
+
+set(CPACK_PACKAGE_NAME "Jakki")
+set(CPACK_PACKAGE_VENDOR "Jakki")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Jakki")
+set(CPACK_PACKAGE_VERSION_MAJOR ${CMAKE_PROJECT_VERSION_MAJOR})
+set(CPACK_PACKAGE_VERSION_MINOR ${CMAKE_PROJECT_VERSION_MINOR})
+set(CPACK_PACKAGE_VERSION_PATCH ${CMAKE_PROJECT_VERSION_PATCH})
+set(CPACK_PACKAGE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/package")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "Jakki")
+set(CPACK_PACKAGE_EXECUTABLES "Jakki" "Jakki")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set(CPACK_NSIS_MUI_ICON "${CMAKE_CURRENT_SOURCE_DIR}/ui/images/icon.ico")
+set(CPACK_NSIS_MUI_UNIICON "${CMAKE_CURRENT_SOURCE_DIR}/ui/images/icon.ico")
+SET(CPACK_NSIS_INSTALLED_ICON_NAME "bin/jakki.exe")
+SET(CPACK_NSIS_MUI_FINISHPAGE_RUN "jakki.exe")
+
+include(CPack)
