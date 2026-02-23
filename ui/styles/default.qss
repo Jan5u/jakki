@@ -58,3 +58,18 @@ QHeaderView::section {
 QMenuBar {
     background: rgb(20, 20, 20);
 }
+
+QTextBrowser {
+    background: rgb(30, 30, 30);
+    border: none;
+}
+
+QTextEdit#messageLineEdit {
+    background: rgb(40, 40, 40);
+    border: 2px solid rgb(45, 45, 45);
+    border-radius: 6px;
+}
+
+QTextEdit#messageLineEdit::hover {
+    border: 2px solid rgb(60, 60, 60);
+}

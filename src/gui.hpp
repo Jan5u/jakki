@@ -4,6 +4,9 @@
 #include "auth.hpp"
 #include "config.hpp"
 #include "network.hpp"
+#include "chat/text.hpp"
+#include "chat/emote_manager.hpp"
+#include "chat/emote_completer.hpp"
 #include "video/video.hpp"
 #include "video/render/vulkan_renderer.hpp"
 #include <QDebug>
@@ -19,6 +22,13 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QRegularExpression>
+#include <QTextBrowser>
+#include <QTextEdit>
+#include <QScrollBar>
+#include <QSet>
+#include <QKeyEvent>
+#include <QTimer>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -35,7 +45,16 @@ class MainWindow : public QMainWindow {
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+  protected:
+    bool eventFilter(QObject *obj, QEvent *event) override;
+
   private:
+    struct ChannelHistoryState {
+        int oldestMessageId = 0;
+        bool hasMore = true;
+        bool loading = false;
+    };
+
     Ui::MainWindow *ui;
     Ui::SettingsTab *uiSettings;
     Ui::adminPanelTab *uiAdminPanel;
@@ -44,6 +63,8 @@ class MainWindow : public QMainWindow {
     Audio audioManager;
     Network networkManager;
     Video videoManager;
+    Text textManager;
+    EmoteManager emoteManager;
     QStandardItemModel *model;
     QStandardItemModel *accountsModel;
     QWidget *settingsTab;
@@ -53,11 +74,23 @@ class MainWindow : public QMainWindow {
     bool isInitialDeviceSetup = true;
     QString currentInputDeviceId;
     QString currentOutputDeviceId;
+    QMap<QString, ChannelHistoryState> channelHistoryState;
+    QSet<QString> pendingScrollToBottom;
+    QMap<QString, QTimer*> typingThrottleTimers;
+    QMap<QString, QMap<QString, QTimer*>> typingUserTimers;
+    static constexpr int kHistoryPageSize = 50;
+    static constexpr int kTypingThrottleMs = 3000;
+    static constexpr int kTypingTimeoutMs = 5000;
     void openTextChannelTab(const QString &channelName);
     void updateAudioDeviceComboBox();
     bool validateInputDevice();
     bool validateOutputDevice();
     void sendAdminRequest(const QString &requestType);
+    void displayMessage(const QString &channel, const QString &sender, const QString &content, const QDateTime &timestamp);
+    void onHistoryReceived(const QString &channel, const QList<Message> &messages);
+    void onChatScrolled(int value);
+    void updateTypingLabel(const QString &channel);
+    QString formatMessage(const QString &text);
 
   public slots:
     void onFrameQueued(int colorValue);

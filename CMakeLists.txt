@@ -19,9 +19,11 @@ if(UNIX)
     pkg_check_modules(AVUTIL REQUIRED libavutil)
     pkg_check_modules(OPUS REQUIRED opus)
     pkg_check_modules(GIO REQUIRED gio-2.0)
+    pkg_check_modules(ZSTD REQUIRED libzstd)
 elseif(WIN32)
     find_package(FFMPEG REQUIRED)
     find_package(Opus REQUIRED)
+    find_package(zstd CONFIG REQUIRED)
 endif()
 
 include_directories(${PIPEWIRE_INCLUDE_DIRS})
@@ -62,6 +64,14 @@ set(COMMON_SOURCES
     src/audio/audio.cpp
     src/config.hpp
     src/config.cpp
+    src/chat/text.hpp
+    src/chat/text.cpp
+    src/chat/emoji_data.hpp
+    src/chat/emoji_data.cpp
+    src/chat/emote_manager.hpp
+    src/chat/emote_manager.cpp
+    src/chat/emote_completer.hpp
+    src/chat/emote_completer.cpp
     src/video/video.hpp
     src/video/video.cpp
     src/video/decode/decoder.hpp
@@ -108,10 +118,10 @@ target_link_libraries(jakki PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6Keychain:
 
 if(WIN32)
     set_target_properties(jakki PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)
-    target_link_libraries(jakki PRIVATE Opus::opus ${FFMPEG_LIBRARIES})
+    target_link_libraries(jakki PRIVATE Opus::opus ${FFMPEG_LIBRARIES} zstd::libzstd)
     add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD COMMAND Qt6::windeployqt --qmldir "${CMAKE_CURRENT_SOURCE_DIR}" "$<TARGET_FILE:${CMAKE_PROJECT_NAME}>" ) 
 elseif(UNIX)
-    target_link_libraries(jakki PRIVATE ${OPUS_LIBRARIES} ${PIPEWIRE_LIBRARIES} ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${LIBNOTIFY_LIBRARIES} ${GIO_LIBRARIES})
+    target_link_libraries(jakki PRIVATE ${OPUS_LIBRARIES} ${PIPEWIRE_LIBRARIES} ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${LIBNOTIFY_LIBRARIES} ${GIO_LIBRARIES} ${ZSTD_LIBRARIES})
     target_include_directories(jakki PRIVATE ${GIO_INCLUDE_DIRS})
 endif()
 

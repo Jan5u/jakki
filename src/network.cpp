@@ -1,7 +1,8 @@
 #include "network.hpp"
 #include "video/video.hpp"
+#include <QJsonObject>
 
-enum class EventType { ServerInfo, Message, UserJoin, AdminResponse, Unknown };
+enum class EventType { ServerInfo, Message, UserJoin, AdminResponse, HistoryResponse, EmoteListResponse, TypingIndicator, Unknown };
 
 Network::Network() : audioManager(nullptr), authManager(nullptr) {}
 
@@ -244,19 +245,18 @@ void Network::sendAdminMessage(const QString &requestType) {
     }
 }
 
-void Network::handleEventPacket(char *buf, size_t bufsize) {
-    std::string data(buf, bufsize);
-    size_t start = 0;
-    size_t end;
-    while ((end = data.find('\n', start)) != std::string::npos) {
-        std::string msg = data.substr(start, end - start);
-        if (!msg.empty()) {
-            std::cout << "Received message: " << msg << std::endl;
-            handleEventMessage(msg);
-        }
-        start = end + 1;
+void Network::sendTextMessage(const QString &jsonMessage) {
+    if (!connected || !eventStream) {
+        std::cerr << "Cannot send text message: not connected or no event stream\n";
+        return;
     }
-    std::memset(buf, 0, bufsize);
+    QByteArray messageBytes = jsonMessage.toUtf8();
+    messageBytes.append('\n');
+
+    int ret = SSL_write(eventStream, messageBytes.constData(), messageBytes.size());
+    if (ret <= 0) {
+        std::cerr << "Failed to send text message" << std::endl;
+    }
 }
 
 EventType getEventType(const std::string &type) {
@@ -264,13 +264,23 @@ EventType getEventType(const std::string &type) {
     if (type == "Message") return EventType::Message;
     if (type == "UserJoin") return EventType::UserJoin;
     if (type == "admin_response") return EventType::AdminResponse;
+    if (type == "history_response") return EventType::HistoryResponse;
+    if (type == "emote_list_response") return EventType::EmoteListResponse;
+    if (type == "typing_indicator") return EventType::TypingIndicator;
     return EventType::Unknown;
 }
 
 void Network::handleEventMessage(std::string msg) {
-    json j = json::parse(msg);
+    json j;
+    try {
+        j = json::parse(msg);
+    } catch (const json::parse_error &e) {
+        std::cerr << "JSON parse error: " << e.what() << std::endl;
+        return;
+    }
     if (!j.contains("type")) {
         std::cerr << "Invalid event\n";
+        return;
     }
     EventType type = getEventType(j["type"]);
     // match event type
@@ -305,6 +315,53 @@ void Network::handleEventMessage(std::string msg) {
             emit adminResponseReceived(request, jsonData);
         }
         break;
+    case EventType::Message:
+        if (j.contains("channel") && j.contains("user") && j.contains("content")) {
+            QString channel = QString::fromStdString(j["channel"].get<std::string>());
+            QString sender = QString::fromStdString(j["user"].get<std::string>());
+            QString content = QString::fromStdString(j["content"].get<std::string>());
+            bool compressed = j.value("compressed", false);
+            std::cout << "Text message from " << sender.toStdString() << " in " << channel.toStdString() << std::endl;
+            emit textMessageReceived(channel, sender, content, compressed);
+        }
+        break;
+    case EventType::HistoryResponse:
+        if (j.contains("channel") && j.contains("messages") && j["messages"].is_array()) {
+            QString channel = QString::fromStdString(j["channel"].get<std::string>());
+            QJsonArray messagesArray;
+            for (const auto &msg : j["messages"]) {
+                QJsonObject msgObj;
+                if (msg.contains("id")) msgObj["id"] = msg["id"].get<int>();
+                if (msg.contains("user")) msgObj["user"] = QString::fromStdString(msg["user"].get<std::string>());
+                if (msg.contains("content")) msgObj["content"] = QString::fromStdString(msg["content"].get<std::string>());
+                if (msg.contains("timestamp")) msgObj["timestamp"] = QString::fromStdString(msg["timestamp"].get<std::string>());
+                msgObj["compressed"] = msg.value("compressed", false);
+                messagesArray.append(msgObj);
+            }
+            std::cout << "History response for " << channel.toStdString() << ": " << messagesArray.size() << " messages" << std::endl;
+            emit historyResponseReceived(channel, messagesArray);
+        }
+        break;
+    case EventType::EmoteListResponse:
+        if (j.contains("emotes") && j["emotes"].is_array()) {
+            QJsonArray emotesArray;
+            for (const auto &emote : j["emotes"]) {
+                QJsonObject emoteObj;
+                if (emote.contains("name")) emoteObj["name"] = QString::fromStdString(emote["name"].get<std::string>());
+                if (emote.contains("data")) emoteObj["data"] = QString::fromStdString(emote["data"].get<std::string>());
+                emotesArray.append(emoteObj);
+            }
+            std::cout << "Emote list received: " << emotesArray.size() << " emotes" << std::endl;
+            emit emoteListReceived(emotesArray);
+        }
+        break;
+    case EventType::TypingIndicator:
+        if (j.contains("channel") && j.contains("user")) {
+            QString channel = QString::fromStdString(j["channel"].get<std::string>());
+            QString user = QString::fromStdString(j["user"].get<std::string>());
+            emit typingIndicatorReceived(channel, user);
+        }
+        break;
     default:
         std::cout << "Unknown event type.\n";
         break;
@@ -314,9 +371,22 @@ void Network::handleEventMessage(std::string msg) {
 void Network::receiveEventPackets() {
     char buf[102400] = {};
     size_t readbytes;
+    std::string accumBuffer;
     while (SSL_read_ex(eventStream, buf, sizeof(buf), &readbytes)) {
         std::cout << "receiveEventPackets rb: " << readbytes << std::endl;
-        handleEventPacket(buf, sizeof(buf));
+        accumBuffer.append(buf, readbytes);
+
+        size_t pos;
+        while ((pos = accumBuffer.find('\n')) != std::string::npos) {
+            std::string msg = accumBuffer.substr(0, pos);
+            accumBuffer.erase(0, pos + 1);
+            if (!msg.empty()) {
+                std::cout << "Received message: " << msg.substr(0, 40) << "..." << std::endl;
+                handleEventMessage(msg);
+            }
+        }
+
+        std::memset(buf, 0, readbytes);
     }
     std::cout << "Stopping receiveEventPackets thread." << std::endl;
 }

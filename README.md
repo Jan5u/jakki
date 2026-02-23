@@ -18,6 +18,7 @@
 - QtKeychain
 - FFmpeg
 - XDG Desktop Portal
+- Zstd
 - CMake (make)
 - Ninja (make)
 - nv-codec-headers (make) 
@@ -29,25 +30,25 @@
 Debian 13 / Ubuntu 25
 
 ```bash
-sudo apt install cmake ninja-build qt6-base-dev libssl-dev libnotify-dev libdrm-dev libpipewire-0.3-dev qtkeychain-qt6-dev libopus-dev nlohmann-json3-dev libavcodec-dev libavformat-dev glslc libffmpeg-nvenc-dev xdg-desktop-portal
+sudo apt install cmake ninja-build qt6-base-dev libssl-dev libnotify-dev libdrm-dev libpipewire-0.3-dev qtkeychain-qt6-dev libopus-dev nlohmann-json3-dev libavcodec-dev libavformat-dev glslc libffmpeg-nvenc-dev xdg-desktop-portal libzstd-dev
 ```
 
 Arch
 
 ```bash
-sudo pacman -S --needed ninja qt6-base openssl libnotify libdrm libpipewire qtkeychain-qt6 opus ffmpeg ffnvcodec-headers xdg-desktop-portal nlohmann-json vulkan-headers shaderc
+sudo pacman -S --needed ninja qt6-base openssl libnotify libdrm libpipewire qtkeychain-qt6 opus ffmpeg ffnvcodec-headers xdg-desktop-portal nlohmann-json vulkan-headers shaderc zstd
 ```
 
 Fedora
 
 ```bash
-sudo dnf in ninja qt6-qtbase-devel openssl-devel opus-devel libdrm-devel pipewire-devel qtkeychain-qt6-devel ffmpeg-free-devel libnotify-devel json-devel
+sudo dnf in ninja qt6-qtbase-devel openssl-devel opus-devel libdrm-devel pipewire-devel qtkeychain-qt6-devel ffmpeg-free-devel libnotify-devel json-devel libzstd-devel
 ```
 
 Enter nix shell
 
 ```bash
-nix-shell -p ninja qt6.full cmake pkg-config openssl.dev libopus.dev libdrm.dev pipewire.dev libsForQt6.qtkeychain ffmpeg.dev nlohmann_json pipewire
+nix-shell -p ninja qt6.full cmake pkg-config openssl.dev libopus.dev libdrm.dev pipewire.dev libsForQt6.qtkeychain ffmpeg.dev nlohmann_json pipewire zstd.dev
 ```
 
 Run with env variable

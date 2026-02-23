@@ -7,7 +7,7 @@
 #include "ui_adminpanel.h"
 #include "ui_screenshare.h"
 
-MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow), audioManager(networkManager, config), networkManager(audioManager, authManager), videoManager(config, networkManager) {
+MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow), audioManager(networkManager, config), networkManager(audioManager, authManager), videoManager(config, networkManager), textManager(networkManager), emoteManager(networkManager) {
     ui->setupUi(this);
     connect(ui->actionQuit, &QAction::triggered, this, &QApplication::quit);
     connect(ui->actionDisconnect, &QAction::triggered, this, &MainWindow::disconnect);
@@ -21,6 +21,35 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         // TODO: Show error dialog to user
     });
     connect(&networkManager, &Network::adminResponseReceived, this, &MainWindow::handleAdminResponse);
+    connect(&textManager, &Text::messageReceived, this, &MainWindow::displayMessage);
+    connect(&textManager, &Text::historyReceived, this, &MainWindow::onHistoryReceived);
+    connect(&textManager, &Text::typingIndicatorReceived, this, [this](const QString &channel, const QString &user) {
+        for (int i = 0; i < ui->tabWidget->count(); ++i) {
+            if (ui->tabWidget->tabText(i) == channel) {
+                QWidget *tab = ui->tabWidget->widget(i);
+                QLabel *typingLabel = tab->findChild<QLabel *>("typingLabel");
+                if (!typingLabel)
+                    break;
+
+                auto &userTimers = typingUserTimers[channel];
+                if (!userTimers.contains(user)) {
+                    QTimer *timer = new QTimer(tab);
+                    timer->setSingleShot(true);
+                    connect(timer, &QTimer::timeout, this, [this, channel, user]() {
+                        typingUserTimers[channel].remove(user);
+                        updateTypingLabel(channel);
+                    });
+                    userTimers[user] = timer;
+                }
+                userTimers[user]->start(kTypingTimeoutMs);
+                updateTypingLabel(channel);
+                break;
+            }
+        }
+    });
+    connect(&networkManager, &Network::channelsReceived, &emoteManager, [this](const QStringList&) {
+        emoteManager.requestEmotes();
+    });
     connect(&audioManager, &Audio::deviceListChanged, this, &MainWindow::updateAudioDeviceComboBox);
     connect(&audioManager, &Audio::defaultDeviceChanged, this, &MainWindow::onDefaultDeviceChanged);
     connect(&audioManager, &Audio::volumeChanged, this, &MainWindow::onVolumeChanged);
@@ -108,6 +137,37 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(uiSettings->StyleSelectComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onStyleChanged);
 }
 
+static QString markdownToHtml(const QString &text) {
+    QTextDocument doc;
+    doc.setMarkdown(text, QTextDocument::MarkdownDialectGitHub);
+    QString html = doc.toHtml();
+    static QRegularExpression bodyRegex(R"(<body[^>]*>(.*)</body>)", QRegularExpression::DotMatchesEverythingOption);
+    QRegularExpressionMatch match = bodyRegex.match(html);
+    if (match.hasMatch()) {
+        html = match.captured(1).trimmed();
+    }
+    html.replace(QLatin1String("<pre"), QLatin1String("<pre style=\"background-color:rgb(40,40,40); padding:8px; margin:4px 0;\""));
+    html.replace(QLatin1String("<code"), QLatin1String("<code style=\"background-color:rgb(40,40,40); font-family:monospace;\""));
+    static QRegularExpression singleParagraphRegex(R"(^<p[^>]*>(.*)</p>$)", QRegularExpression::DotMatchesEverythingOption);
+    QRegularExpressionMatch pMatch = singleParagraphRegex.match(html);
+    if (pMatch.hasMatch()) {
+        return pMatch.captured(1);
+    }
+    return html;
+}
+
+static void appendMessage(QTextBrowser *browser, const QString &time, const QString &sender, const QString &formattedContent) {
+    browser->append(QString("<p style=\"margin:0px; line-height:16px;\">&nbsp;</p><p style=\"margin:0px;\"><b>%1</b> <span "
+                            "style=\"color:gray;\">%2</span></p><p style=\"margin:0px;\">%3</p>")
+                        .arg(sender, time, formattedContent));
+}
+
+QString MainWindow::formatMessage(const QString &text) {
+    QString result = markdownToHtml(text);
+    result = emoteManager.processEmoteCodes(result);
+    return result;
+}
+
 void MainWindow::showScreenShareDialog() {
     QDialog dialog(this);
     Ui::screenShareDialog uiDialog;
@@ -188,6 +248,30 @@ MainWindow::~MainWindow() {
     networkManager.disconnectQUIC();
 }
 
+bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
+    if (event->type() == QEvent::KeyPress) {
+        auto *textEdit = qobject_cast<QTextEdit *>(obj);
+        if (textEdit && textEdit->objectName() == "messageLineEdit") {
+            auto *keyEvent = static_cast<QKeyEvent *>(event);
+            if ((keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) && !(keyEvent->modifiers() & Qt::ShiftModifier)) {
+                QWidget *tab = textEdit->parentWidget();
+                if (tab) {
+                    auto *completer = tab->findChild<EmoteCompleter *>();
+                    if (completer && completer->isVisible()) {
+                        return false;
+                    }
+                }
+                QString channelName = textEdit->property("channelName").toString();
+                if (!channelName.isEmpty()) {
+                    sendMessage(channelName);
+                    return true;
+                }
+            }
+        }
+    }
+    return QMainWindow::eventFilter(obj, event);
+}
+
 void MainWindow::disconnect() {
     qDebug("disconnect");
     networkManager.disconnectQUIC();
@@ -251,13 +335,14 @@ void MainWindow::sendMessage() {
 
 void MainWindow::sendMessage(const QString &channelName) {
     QWidget *currentTab = ui->tabWidget->currentWidget();
-    QLineEdit *messageInput = currentTab->findChild<QLineEdit*>("messageLineEdit");
+    QTextEdit *messageInput = currentTab->findChild<QTextEdit*>("messageLineEdit");
     if (messageInput) {
-        QString message = messageInput->text();
+        QString message = messageInput->toPlainText().trimmed();
         if (!message.isEmpty()) {
             qDebug() << "Message:" << message << "to channel:" << channelName;
-            // TODO: send message
+            textManager.sendMessage(channelName, message);
             messageInput->clear();
+            pendingScrollToBottom.insert(channelName);
         }
     }
 }
@@ -312,12 +397,60 @@ void MainWindow::openTextChannelTab(const QString &channelName) {
     QWidget *textChannelTab = new QWidget;
     Ui::TextChannelTab uiTextChannel;
     uiTextChannel.setupUi(textChannelTab);
-    connect(uiTextChannel.sendButton, &QPushButton::clicked, [this, channelName]() {
-        sendMessage(channelName);
+    connect(uiTextChannel.sendButton, &QPushButton::clicked, [this, channelName]() { sendMessage(channelName); });
+
+    QTextEdit *messageInput = uiTextChannel.messageLineEdit;
+    messageInput->setTabChangesFocus(false);
+    messageInput->setAcceptRichText(false);
+    messageInput->installEventFilter(this);
+    messageInput->setProperty("channelName", channelName);
+
+    QTimer *typingThrottle = new QTimer(textChannelTab);
+    typingThrottle->setSingleShot(true);
+    typingThrottleTimers[channelName] = typingThrottle;
+    connect(messageInput->document(), &QTextDocument::contentsChanged, messageInput, [this, messageInput, channelName]() {
+        if (messageInput->toPlainText().isEmpty())
+            return;
+        QTimer *throttle = typingThrottleTimers.value(channelName);
+        if (throttle && !throttle->isActive()) {
+            textManager.sendTypingIndicator(channelName);
+            throttle->start(kTypingThrottleMs);
+        }
     });
+
+    EmoteCompleter *completer = new EmoteCompleter(emoteManager, textChannelTab);
+    completer->attachToInput(messageInput);
+
+    QTextBrowser *textBrowser = uiTextChannel.textBrowser;
+
+    const int inputMinH = 36;
+    const int inputMaxH = 150;
+    connect(messageInput->document(), &QTextDocument::contentsChanged, messageInput, [messageInput, inputMinH, inputMaxH]() {
+        QTextDocument *doc = messageInput->document();
+        doc->setTextWidth(messageInput->viewport()->width());
+        int docHeight = static_cast<int>(doc->size().height());
+        int frameMargins = messageInput->frameWidth() * 2;
+        int contentMargins = messageInput->contentsMargins().top() + messageInput->contentsMargins().bottom();
+        int newHeight = qBound(inputMinH, docHeight + frameMargins + contentMargins, inputMaxH);
+        messageInput->setMinimumHeight(newHeight);
+        messageInput->setMaximumHeight(newHeight);
+    });
+
+    QScrollBar *scrollBar = textBrowser->verticalScrollBar();
+    scrollBar->setProperty("channelName", channelName);
+    connect(scrollBar, &QScrollBar::valueChanged, this, &MainWindow::onChatScrolled);
+    connect(scrollBar, &QScrollBar::rangeChanged, textBrowser, [scrollBar](int, int max) {
+        if (scrollBar->value() >= max - 20 || max <= 0) {
+            scrollBar->setValue(max);
+        }
+    });
+
     int tabIndex = ui->tabWidget->addTab(textChannelTab, channelName);
     ui->tabWidget->setCurrentIndex(tabIndex);
-    
+
+    channelHistoryState[channelName] = ChannelHistoryState{};
+    textManager.requestHistory(channelName, kHistoryPageSize);
+
     static bool closeConnected = false;
     if (!closeConnected) {
         connect(ui->tabWidget, &QTabWidget::tabCloseRequested, this, &MainWindow::closeTab);
@@ -420,9 +553,150 @@ void MainWindow::updateAudioDeviceComboBox() {
 }
 
 void MainWindow::closeTab(int index) {
+    QString channelName = ui->tabWidget->tabText(index);
+    channelHistoryState.remove(channelName);
     QWidget *tab = ui->tabWidget->widget(index);
     ui->tabWidget->removeTab(index);
     delete tab;
+}
+
+void MainWindow::displayMessage(const QString &channel, const QString &sender, const QString &content, const QDateTime &timestamp) {
+    if (typingUserTimers.contains(channel) && typingUserTimers[channel].contains(sender)) {
+        typingUserTimers[channel][sender]->stop();
+        typingUserTimers[channel].remove(sender);
+        updateTypingLabel(channel);
+    }
+
+    for (int i = 0; i < ui->tabWidget->count(); ++i) {
+        if (ui->tabWidget->tabText(i) == channel) {
+            QWidget *tab = ui->tabWidget->widget(i);
+            QTextBrowser *textEdit = tab->findChild<QTextBrowser *>("textBrowser");
+            if (textEdit) {
+                QString time = timestamp.toString("yyyy-MM-dd hh:mm");
+                appendMessage(textEdit, time, sender.toHtmlEscaped(), formatMessage(content));
+                if (pendingScrollToBottom.remove(channel)) {
+                    QScrollBar *sb = textEdit->verticalScrollBar();
+                    sb->setValue(sb->maximum());
+                }
+            }
+            return;
+        }
+    }
+    openTextChannelTab(channel);
+}
+
+void MainWindow::onHistoryReceived(const QString &channel, const QList<Message> &messages) {
+    for (int i = 0; i < ui->tabWidget->count(); ++i) {
+        if (ui->tabWidget->tabText(i) != channel)
+            continue;
+
+        QWidget *tab = ui->tabWidget->widget(i);
+        QTextBrowser *textBrowser = tab->findChild<QTextBrowser *>("textBrowser");
+        if (!textBrowser)
+            return;
+
+        auto &state = channelHistoryState[channel];
+        state.loading = false;
+
+        if (messages.isEmpty()) {
+            state.hasMore = false;
+            return;
+        }
+
+        if (messages.size() < kHistoryPageSize) {
+            state.hasMore = false;
+        }
+
+        int oldestId = messages.first().id;
+        for (const auto &msg : messages) {
+            if (msg.id < oldestId)
+                oldestId = msg.id;
+        }
+        state.oldestMessageId = oldestId;
+
+        bool isInitialLoad = textBrowser->document()->isEmpty();
+
+        if (isInitialLoad) {
+            for (const auto &msg : messages) {
+                QString time = msg.timestamp.toString("yyyy-MM-dd hh:mm");
+                appendMessage(textBrowser, time, msg.sender.toHtmlEscaped(), formatMessage(msg.content));
+            }
+            QScrollBar *sb = textBrowser->verticalScrollBar();
+            sb->setValue(sb->maximum());
+        } else {
+            QScrollBar *sb = textBrowser->verticalScrollBar();
+            int oldMax = sb->maximum();
+            int oldValue = sb->value();
+
+            QString prependHtml;
+            for (const auto &msg : messages) {
+                QString time = msg.timestamp.toString("yyyy-MM-dd hh:mm");
+                QString formattedContent = formatMessage(msg.content);
+                QString senderEscaped = msg.sender.toHtmlEscaped();
+                prependHtml += QString("<p style=\"margin:0px; line-height:16px;\">&nbsp;</p><p style=\"margin:0px;\"><b>%1</b> <span "
+                                       "style=\"color:gray;\">%2</span></p><p style=\"margin:0px;\">%3</p>")
+                                   .arg(senderEscaped, time, formattedContent);
+            }
+
+            QTextCursor cursor(textBrowser->document());
+            cursor.movePosition(QTextCursor::Start);
+            cursor.insertHtml(prependHtml);
+            cursor.insertBlock();
+
+            int newMax = sb->maximum();
+            int delta = newMax - oldMax;
+            sb->setValue(oldValue + delta);
+        }
+        return;
+    }
+}
+
+void MainWindow::updateTypingLabel(const QString &channel) {
+    for (int i = 0; i < ui->tabWidget->count(); ++i) {
+        if (ui->tabWidget->tabText(i) == channel) {
+            QWidget *tab = ui->tabWidget->widget(i);
+            QLabel *typingLabel = tab->findChild<QLabel *>("typingLabel");
+            if (!typingLabel)
+                return;
+
+            QStringList users = typingUserTimers[channel].keys();
+            if (users.isEmpty()) {
+                typingLabel->clear();
+            } else if (users.size() == 1) {
+                typingLabel->setText(users.first() + " is typing...");
+            } else if (users.size() == 2) {
+                typingLabel->setText(users[0] + " and " + users[1] + " are typing...");
+            } else {
+                typingLabel->setText(QString::number(users.size()) + " people are typing...");
+            }
+            return;
+        }
+    }
+}
+
+void MainWindow::onChatScrolled(int value) {
+    if (value != 0)
+        return;
+
+    QScrollBar *scrollBar = qobject_cast<QScrollBar *>(sender());
+    if (!scrollBar)
+        return;
+
+    QString channelName = scrollBar->property("channelName").toString();
+    if (channelName.isEmpty())
+        return;
+
+    auto it = channelHistoryState.find(channelName);
+    if (it == channelHistoryState.end())
+        return;
+
+    auto &state = it.value();
+    if (!state.hasMore || state.loading)
+        return;
+
+    state.loading = true;
+    qDebug() << "Fetching older history for" << channelName << "before ID" << state.oldestMessageId;
+    textManager.requestHistory(channelName, kHistoryPageSize, state.oldestMessageId);
 }
 
 void MainWindow::onUserJoinedChannel(const QString& user, const QString& channel) {
