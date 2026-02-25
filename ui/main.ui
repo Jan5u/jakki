@@ -87,6 +87,7 @@
     <property name="title">
      <string>Help</string>
     </property>
+    <addaction name="actionAbout_Qt"/>
    </widget>
    <widget class="QMenu" name="menuChannel">
     <property name="title">
@@ -148,6 +149,11 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+S</string>
+   </property>
+  </action>
+  <action name="actionAbout_Qt">
+   <property name="text">
+    <string>About Qt</string>
    </property>
   </action>
  </widget>

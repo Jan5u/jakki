@@ -12,6 +12,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->actionQuit, &QAction::triggered, this, &QApplication::quit);
     connect(ui->actionDisconnect, &QAction::triggered, this, &MainWindow::disconnect);
     connect(ui->actionNew_Connection, &QAction::triggered, this, &MainWindow::showConnectDialog);
+    connect(ui->actionAbout_Qt, &QAction::triggered, this, &QApplication::aboutQt);
     connect(ui->treeView, &QTreeView::customContextMenuRequested, this, &MainWindow::showContextMenu);
     connect(ui->treeView, &QTreeView::clicked, this, &MainWindow::onTreeViewItemClicked);
     connect(&networkManager, &Network::channelsReceived, this, &MainWindow::addChannels);
