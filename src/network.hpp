@@ -46,6 +46,7 @@ class Network : public QObject {
         bool isConnected() const { return connected; }
         void sendAdminMessage(const QString& requestType);
         void sendTextMessage(const QString& jsonMessage);
+        void requestUserList();
         void setVideoManager(Video* video);
 
     signals:
@@ -57,6 +58,8 @@ class Network : public QObject {
         void historyResponseReceived(const QString& channel, const QJsonArray& messages);
         void emoteListReceived(const QJsonArray& emotes);
         void typingIndicatorReceived(const QString& channel, const QString& user);
+        void usersListReceived(const QStringList& onlineUsers, const QStringList& offlineUsers);
+        void userStatusChanged(const QString& user, bool online);
 
 
     private:

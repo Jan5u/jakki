@@ -50,6 +50,15 @@ QTreeView#channelsTreeView {
     selection-color: white;
 }
 
+QTreeWidget#usersListTreeWidget {
+    background: rgb(30, 30, 30);
+    border: 2px solid rgb(30, 30, 30);
+    border-radius: 12px;
+    padding: 4px;
+    selection-background-color: transparent;
+    selection-color: white;
+}
+
 QHeaderView::section {
     background: rgb(30, 30, 30);
     border: none;

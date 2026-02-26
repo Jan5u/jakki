@@ -32,6 +32,7 @@
 #include <QStatusBar>
 #include <QToolButton>
 #include <QPainter>
+#include <QTreeWidgetItem>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -127,4 +128,6 @@ class MainWindow : public QMainWindow {
     void requestUsersDatabase();
     void handleAdminResponse(const QString& request, const QString& jsonData);
     void approveSelectedUser();
+    void onUsersListReceived(const QStringList& onlineUsers, const QStringList& offlineUsers);
+    void onUserStatusChanged(const QString& user, bool online);
 };

@@ -16,6 +16,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->channelsTreeView, &QTreeView::customContextMenuRequested, this, &MainWindow::showContextMenu);
     connect(ui->channelsTreeView, &QTreeView::clicked, this, &MainWindow::onTreeViewItemClicked);
     connect(&networkManager, &Network::channelsReceived, this, &MainWindow::addChannels);
+    connect(&networkManager, &Network::usersListReceived, this, &MainWindow::onUsersListReceived);
+    connect(&networkManager, &Network::userStatusChanged, this, &MainWindow::onUserStatusChanged);
+    connect(&networkManager, &Network::channelsReceived, this, [this](const QStringList&) {
+        networkManager.requestUserList();
+    });
     connect(&networkManager, &Network::userJoinedChannel, this, &MainWindow::onUserJoinedChannel);
     connect(&networkManager, &Network::authenticationFailed, this, [this](const QString& reason) {
         qDebug() << "Authentication failed:" << reason;
@@ -84,6 +89,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     statusBar()->addPermanentWidget(sbUsersBtn);
     connect(sbChannelsBtn, &QToolButton::clicked, this, [this]() {
         ui->channelsTreeView->setVisible(!ui->channelsTreeView->isVisible());
+    });
+    connect(sbUsersBtn, &QToolButton::clicked, this, [this]() {
+        ui->usersListTreeWidget->setVisible(!ui->usersListTreeWidget->isVisible());
     });
     connect(sbMonitorBtn, &QToolButton::clicked, this, &MainWindow::showScreenShareDialog);
 
@@ -324,10 +332,27 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
 void MainWindow::disconnect() {
     qDebug("disconnect");
     networkManager.disconnectQUIC();
-    
-    // Clear the channel list
+
     model->clear();
     model->setHorizontalHeaderLabels({"Channels"});
+
+    ui->usersListTreeWidget->clear();
+
+    channelHistoryState.clear();
+    typingThrottleTimers.clear();
+    typingUserTimers.clear();
+
+    if (vulkanTab) {
+        int idx = ui->tabWidget->indexOf(vulkanTab);
+        if (idx >= 0)
+            ui->tabWidget->removeTab(idx);
+    }
+
+    for (int i = ui->tabWidget->count() - 1; i >= 0; --i) {
+        QWidget *tab = ui->tabWidget->widget(i);
+        ui->tabWidget->removeTab(i);
+        delete tab;
+    }
 }
 
 void MainWindow::showConnectDialog() {
@@ -979,4 +1004,54 @@ void MainWindow::approveSelectedUser() {
 
 void MainWindow::onFrameQueued(int colorValue) {
     // qDebug() << "Frame queued:" << colorValue;
+}
+
+void MainWindow::onUsersListReceived(const QStringList &onlineUsers, const QStringList &offlineUsers) {
+    ui->usersListTreeWidget->clear();
+
+    QTreeWidgetItem *onlineCategory = new QTreeWidgetItem(ui->usersListTreeWidget);
+    onlineCategory->setText(0, QString("Online — %1").arg(onlineUsers.size()));
+    onlineCategory->setFlags(onlineCategory->flags() & ~Qt::ItemIsSelectable);
+    for (const QString &user : onlineUsers) {
+        QTreeWidgetItem *item = new QTreeWidgetItem(onlineCategory);
+        item->setText(0, user);
+    }
+
+    QTreeWidgetItem *offlineCategory = new QTreeWidgetItem(ui->usersListTreeWidget);
+    offlineCategory->setText(0, QString("Offline — %1").arg(offlineUsers.size()));
+    offlineCategory->setFlags(offlineCategory->flags() & ~Qt::ItemIsSelectable);
+    for (const QString &user : offlineUsers) {
+        QTreeWidgetItem *item = new QTreeWidgetItem(offlineCategory);
+        item->setText(0, user);
+    }
+
+    ui->usersListTreeWidget->expandAll();
+}
+
+void MainWindow::onUserStatusChanged(const QString &user, bool online) {
+    for (int c = 0; c < ui->usersListTreeWidget->topLevelItemCount(); ++c) {
+        QTreeWidgetItem *category = ui->usersListTreeWidget->topLevelItem(c);
+        for (int i = 0; i < category->childCount(); ++i) {
+            if (category->child(i)->text(0) == user) {
+                delete category->takeChild(i);
+                break;
+            }
+        }
+    }
+
+    int targetIdx = online ? 0 : 1;
+    QTreeWidgetItem *targetCategory = ui->usersListTreeWidget->topLevelItem(targetIdx);
+    if (!targetCategory)
+        return;
+
+    QTreeWidgetItem *item = new QTreeWidgetItem(targetCategory);
+    item->setText(0, user);
+
+    for (int c = 0; c < ui->usersListTreeWidget->topLevelItemCount(); ++c) {
+        QTreeWidgetItem *category = ui->usersListTreeWidget->topLevelItem(c);
+        QString label = (c == 0) ? "Online" : "Offline";
+        category->setText(0, QString("%1 — %2").arg(label).arg(category->childCount()));
+    }
+
+    ui->usersListTreeWidget->expandAll();
 }
