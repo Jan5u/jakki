@@ -41,7 +41,7 @@ QListWidget::item::hover {
     background: rgb(40, 40, 40);
 }
 
-QTreeView {
+QTreeView#channelsTreeView {
     background: rgb(30, 30, 30);
     border: 2px solid rgb(30, 30, 30);
     border-radius: 12px;

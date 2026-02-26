@@ -13,8 +13,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->actionDisconnect, &QAction::triggered, this, &MainWindow::disconnect);
     connect(ui->actionNew_Connection, &QAction::triggered, this, &MainWindow::showConnectDialog);
     connect(ui->actionAbout_Qt, &QAction::triggered, this, &QApplication::aboutQt);
-    connect(ui->treeView, &QTreeView::customContextMenuRequested, this, &MainWindow::showContextMenu);
-    connect(ui->treeView, &QTreeView::clicked, this, &MainWindow::onTreeViewItemClicked);
+    connect(ui->channelsTreeView, &QTreeView::customContextMenuRequested, this, &MainWindow::showContextMenu);
+    connect(ui->channelsTreeView, &QTreeView::clicked, this, &MainWindow::onTreeViewItemClicked);
     connect(&networkManager, &Network::channelsReceived, this, &MainWindow::addChannels);
     connect(&networkManager, &Network::userJoinedChannel, this, &MainWindow::onUserJoinedChannel);
     connect(&networkManager, &Network::authenticationFailed, this, [this](const QString& reason) {
@@ -82,14 +82,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     statusBar()->addWidget(sbHeadphonesBtn);
     statusBar()->addWidget(sbMonitorBtn);
     statusBar()->addPermanentWidget(sbUsersBtn);
-    connect(sbChannelsBtn, &QToolButton::clicked, this, &MainWindow::showConnectDialog);
+    connect(sbChannelsBtn, &QToolButton::clicked, this, [this]() {
+        ui->channelsTreeView->setVisible(!ui->channelsTreeView->isVisible());
+    });
     connect(sbMonitorBtn, &QToolButton::clicked, this, &MainWindow::showScreenShareDialog);
 
     model = new QStandardItemModel(this);
     model->setHorizontalHeaderLabels({"Channels"});
 
-    ui->treeView->setModel(model);
-    ui->treeView->expandAll();
+    ui->channelsTreeView->setModel(model);
+    ui->channelsTreeView->expandAll();
 
     settingsTab = new QWidget;
     uiSettings = new Ui::SettingsTab;
@@ -353,7 +355,7 @@ void MainWindow::showConnectDialog() {
 }
 
 void MainWindow::showContextMenu(const QPoint &pos) {
-    QModelIndex index = ui->treeView->indexAt(pos);
+    QModelIndex index = ui->channelsTreeView->indexAt(pos);
     if (!index.isValid()) return;
 
     QMenu *menu = new QMenu(this);
@@ -371,7 +373,7 @@ void MainWindow::showContextMenu(const QPoint &pos) {
     QWidgetAction *sliderAction = new QWidgetAction(menu);
     sliderAction->setDefaultWidget(volumeWidget);
     menu->addAction(sliderAction);
-    menu->exec(ui->treeView->viewport()->mapToGlobal(pos));
+    menu->exec(ui->channelsTreeView->viewport()->mapToGlobal(pos));
 }
 
 void MainWindow::sendMessage() {
@@ -407,7 +409,7 @@ void MainWindow::addChannels(const QStringList& channels) {
         model->appendRow(channel);
     }
 
-    ui->treeView->expandAll();
+    ui->channelsTreeView->expandAll();
 }
 
 void MainWindow::onTreeViewItemClicked(const QModelIndex &index) {
