@@ -29,6 +29,9 @@
 #include <QSet>
 #include <QKeyEvent>
 #include <QTimer>
+#include <QStatusBar>
+#include <QToolButton>
+#include <QPainter>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -71,6 +74,12 @@ class MainWindow : public QMainWindow {
     QWidget *adminPanelTab;
     VulkanWindow *vulkanWindow;
     QWidget *vulkanTab;
+    QToolButton *tabSettingsBtn;
+    QToolButton *sbChannelsBtn;
+    QToolButton *sbMicBtn;
+    QToolButton *sbHeadphonesBtn;
+    QToolButton *sbMonitorBtn;
+    QToolButton *sbUsersBtn;
     bool isInitialDeviceSetup = true;
     QString currentInputDeviceId;
     QString currentOutputDeviceId;

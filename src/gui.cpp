@@ -56,6 +56,35 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(&audioManager, &Audio::volumeChanged, this, &MainWindow::onVolumeChanged);
     connect(ui->actionShare_Screen, &QAction::triggered, this, &MainWindow::showScreenShareDialog);
 
+    auto whiteIcon = [](const QString &iconPath) {
+        QPixmap pixmap(iconPath);
+        QPainter painter(&pixmap);
+        painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+        painter.fillRect(pixmap.rect(), Qt::white);
+        painter.end();
+        return QIcon(pixmap);
+    };
+    auto makeStatusBtn = [this, &whiteIcon](const QString &iconPath, const QString &toolTip) {
+        QToolButton *btn = new QToolButton(this);
+        btn->setIcon(whiteIcon(iconPath));
+        btn->setToolTip(toolTip);
+        btn->setAutoRaise(true);
+        btn->setIconSize(QSize(14, 14));
+        return btn;
+    };
+    sbChannelsBtn = makeStatusBtn(":/icons/list-tree.svg", "Channels");
+    sbMicBtn = makeStatusBtn(":/icons/mic.svg", "Mute");
+    sbHeadphonesBtn = makeStatusBtn(":/icons/headphones.svg", "Deafen");
+    sbMonitorBtn = makeStatusBtn(":/icons/monitor.svg", "Screen Share");
+    sbUsersBtn = makeStatusBtn(":/icons/users.svg", "Users");
+    statusBar()->addWidget(sbChannelsBtn);
+    statusBar()->addWidget(sbMicBtn);
+    statusBar()->addWidget(sbHeadphonesBtn);
+    statusBar()->addWidget(sbMonitorBtn);
+    statusBar()->addPermanentWidget(sbUsersBtn);
+    connect(sbChannelsBtn, &QToolButton::clicked, this, &MainWindow::showConnectDialog);
+    connect(sbMonitorBtn, &QToolButton::clicked, this, &MainWindow::showScreenShareDialog);
+
     model = new QStandardItemModel(this);
     model->setHorizontalHeaderLabels({"Channels"});
 
@@ -90,7 +119,24 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         ui->tabWidget->addTab(vulkanTab, "Screen");
     }
     videoManager.startDecodeThread();
-    
+
+    tabSettingsBtn = new QToolButton(this);
+    tabSettingsBtn->setIcon(whiteIcon(":/icons/settings.svg"));
+    tabSettingsBtn->setToolTip("Settings");
+    tabSettingsBtn->setAutoRaise(true);
+    tabSettingsBtn->setIconSize(QSize(14, 14));
+    ui->tabWidget->setCornerWidget(tabSettingsBtn, Qt::TopRightCorner);
+    connect(tabSettingsBtn, &QToolButton::clicked, this, [this]() {
+        for (int i = 0; i < ui->tabWidget->count(); ++i) {
+            if (ui->tabWidget->tabText(i) == "Settings") {
+                ui->tabWidget->setCurrentIndex(i);
+                return;
+            }
+        }
+        int idx = ui->tabWidget->addTab(settingsTab, "Settings");
+        ui->tabWidget->setCurrentIndex(idx);
+    });
+
     networkManager.setVideoManager(&videoManager);
     
     // Initialize audio device combo boxes
@@ -558,7 +604,10 @@ void MainWindow::closeTab(int index) {
     channelHistoryState.remove(channelName);
     QWidget *tab = ui->tabWidget->widget(index);
     ui->tabWidget->removeTab(index);
-    delete tab;
+    // Don't delete persistent tabs that can be re-opened
+    if (tab != settingsTab && tab != adminPanelTab && tab != vulkanTab) {
+        delete tab;
+    }
 }
 
 void MainWindow::displayMessage(const QString &channel, const QString &sender, const QString &content, const QDateTime &timestamp) {
