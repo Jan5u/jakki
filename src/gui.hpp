@@ -29,6 +29,8 @@
 #include <QSet>
 #include <QKeyEvent>
 #include <QTimer>
+#include <QAbstractTextDocumentLayout>
+#include <QMouseEvent>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
