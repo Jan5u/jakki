@@ -33,6 +33,7 @@
 #include <QToolButton>
 #include <QPainter>
 #include <QTreeWidgetItem>
+#include <QPushButton>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -78,6 +79,7 @@ class MainWindow : public QMainWindow {
     QToolButton *tabSettingsBtn;
     QToolButton *tabAdminPanelBtn;
     QWidget *welcomeTab;
+    QPushButton *welcomeConnectButton;
     QToolButton *sbChannelsBtn;
     QToolButton *sbMicBtn;
     QToolButton *sbHeadphonesBtn;

@@ -24,6 +24,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(&networkManager, &Network::userJoinedChannel, this, &MainWindow::onUserJoinedChannel);
     connect(&networkManager, &Network::authenticationFailed, this, [this](const QString& reason) {
         qDebug() << "Authentication failed:" << reason;
+        if (welcomeConnectButton)
+            welcomeConnectButton->setEnabled(true);
         // TODO: Show error dialog to user
     });
     connect(&networkManager, &Network::adminResponseReceived, this, &MainWindow::handleAdminResponse);
@@ -132,7 +134,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     welcomeLayout->setAlignment(Qt::AlignCenter);
     QLabel *logoLabel = new QLabel;
     QPixmap logo(":/images/icon.svg");
-    logoLabel->setPixmap(logo.scaled(128, 128, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    logoLabel->setPixmap(logo.scaled(96, 96, Qt::KeepAspectRatio, Qt::SmoothTransformation));
     logoLabel->setAlignment(Qt::AlignCenter);
     QLabel *welcomeLabel = new QLabel("Welcome");
     welcomeLabel->setAlignment(Qt::AlignCenter);
@@ -141,6 +143,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     welcomeLabel->setFont(welcomeFont);
     welcomeLayout->addWidget(logoLabel);
     welcomeLayout->addWidget(welcomeLabel);
+    welcomeConnectButton = new QPushButton("Connect to Server");
+    welcomeConnectButton->setFixedWidth(220);
+    welcomeLayout->addWidget(welcomeConnectButton, 0, Qt::AlignCenter);
+    welcomeConnectButton->setEnabled(!networkManager.isConnected());
+    connect(welcomeConnectButton, &QPushButton::clicked, this, &MainWindow::showConnectDialog);
     ui->tabWidget->addTab(welcomeTab, "Welcome");
 
     QWidget *cornerWidget = new QWidget(this);
@@ -370,6 +377,8 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
 void MainWindow::disconnect() {
     qDebug("disconnect");
     networkManager.disconnectQUIC();
+    if (welcomeConnectButton)
+        welcomeConnectButton->setEnabled(true);
 
     model->clear();
     model->setHorizontalHeaderLabels({"Channels"});
@@ -414,6 +423,8 @@ void MainWindow::showConnectDialog() {
         }
         
         networkManager.connectToServer(address, port);
+        if (welcomeConnectButton)
+            welcomeConnectButton->setEnabled(false);
     }
 }
 
