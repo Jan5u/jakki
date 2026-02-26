@@ -76,6 +76,8 @@ class MainWindow : public QMainWindow {
     VulkanWindow *vulkanWindow;
     QWidget *vulkanTab;
     QToolButton *tabSettingsBtn;
+    QToolButton *tabAdminPanelBtn;
+    QWidget *welcomeTab;
     QToolButton *sbChannelsBtn;
     QToolButton *sbMicBtn;
     QToolButton *sbHeadphonesBtn;

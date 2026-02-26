@@ -104,13 +104,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     settingsTab = new QWidget;
     uiSettings = new Ui::SettingsTab;
     uiSettings->setupUi(settingsTab);
-    ui->tabWidget->addTab(settingsTab, "Settings");
 
     // Setup admin panel tab
     adminPanelTab = new QWidget;
     uiAdminPanel = new Ui::adminPanelTab;
     uiAdminPanel->setupUi(adminPanelTab);
-    ui->tabWidget->addTab(adminPanelTab, "Admin Panel");
     
     // Connect admin panel signals
     connect(uiAdminPanel->accountspushButton, &QPushButton::clicked, this, &MainWindow::requestUsersDatabase);
@@ -120,22 +118,57 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     accountsModel = new QStandardItemModel(this);
     accountsModel->setHorizontalHeaderLabels({"ID", "Username", "Public Key", "Admin", "Approved", "Created", "Last Auth"});
     uiAdminPanel->accountstableView->setModel(accountsModel);
-    
 
     vulkanWindow = videoManager.createVulkanWindow();
     connect(vulkanWindow, &VulkanWindow::frameQueued, this, &MainWindow::onFrameQueued);
     vulkanTab = videoManager.createVulkanTab(this);
     if (vulkanTab) {
-        ui->tabWidget->addTab(vulkanTab, "Screen");
+        vulkanTab->hide();
     }
     videoManager.startDecodeThread();
+
+    welcomeTab = new QWidget;
+    QVBoxLayout *welcomeLayout = new QVBoxLayout(welcomeTab);
+    welcomeLayout->setAlignment(Qt::AlignCenter);
+    QLabel *logoLabel = new QLabel;
+    QPixmap logo(":/images/icon.svg");
+    logoLabel->setPixmap(logo.scaled(128, 128, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    logoLabel->setAlignment(Qt::AlignCenter);
+    QLabel *welcomeLabel = new QLabel("Welcome");
+    welcomeLabel->setAlignment(Qt::AlignCenter);
+    QFont welcomeFont = welcomeLabel->font();
+    welcomeFont.setPointSize(18);
+    welcomeLabel->setFont(welcomeFont);
+    welcomeLayout->addWidget(logoLabel);
+    welcomeLayout->addWidget(welcomeLabel);
+    ui->tabWidget->addTab(welcomeTab, "Welcome");
+
+    QWidget *cornerWidget = new QWidget(this);
+    QHBoxLayout *cornerLayout = new QHBoxLayout(cornerWidget);
+    cornerLayout->setContentsMargins(0, 0, 0, 0);
+    cornerLayout->setSpacing(0);
+
+    tabAdminPanelBtn = new QToolButton(this);
+    tabAdminPanelBtn->setIcon(whiteIcon(":/icons/shield-user.svg"));
+    tabAdminPanelBtn->setToolTip("Admin Panel");
+    tabAdminPanelBtn->setAutoRaise(true);
+    tabAdminPanelBtn->setIconSize(QSize(16, 16));
+    connect(tabAdminPanelBtn, &QToolButton::clicked, this, [this]() {
+        for (int i = 0; i < ui->tabWidget->count(); ++i) {
+            if (ui->tabWidget->tabText(i) == "Admin Panel") {
+                ui->tabWidget->setCurrentIndex(i);
+                return;
+            }
+        }
+        int idx = ui->tabWidget->addTab(adminPanelTab, "Admin Panel");
+        ui->tabWidget->setCurrentIndex(idx);
+    });
 
     tabSettingsBtn = new QToolButton(this);
     tabSettingsBtn->setIcon(whiteIcon(":/icons/settings.svg"));
     tabSettingsBtn->setToolTip("Settings");
     tabSettingsBtn->setAutoRaise(true);
-    tabSettingsBtn->setIconSize(QSize(14, 14));
-    ui->tabWidget->setCornerWidget(tabSettingsBtn, Qt::TopRightCorner);
+    tabSettingsBtn->setIconSize(QSize(16, 16));
     connect(tabSettingsBtn, &QToolButton::clicked, this, [this]() {
         for (int i = 0; i < ui->tabWidget->count(); ++i) {
             if (ui->tabWidget->tabText(i) == "Settings") {
@@ -147,8 +180,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         ui->tabWidget->setCurrentIndex(idx);
     });
 
+    cornerLayout->addWidget(tabAdminPanelBtn);
+    cornerLayout->addWidget(tabSettingsBtn);
+    menuBar()->setCornerWidget(cornerWidget, Qt::TopRightCorner);
+
     networkManager.setVideoManager(&videoManager);
-    
+    connect(ui->tabWidget, &QTabWidget::tabCloseRequested, this, &MainWindow::closeTab);
+
     // Initialize audio device combo boxes
     updateAudioDeviceComboBox();
 
@@ -448,7 +486,18 @@ void MainWindow::onTreeViewItemClicked(const QModelIndex &index) {
 
     if (item->parent()) {
         qDebug() << "item parent:" << item->parent()->text();
-        networkManager.joinScreenShare(item->text());
+
+        if (vulkanTab) {
+            for (int i = 0; i < ui->tabWidget->count(); ++i) {
+                if (ui->tabWidget->widget(i) == vulkanTab) {
+                    ui->tabWidget->setCurrentIndex(i);
+                    return;
+                }
+            }
+            networkManager.joinScreenShare(item->text());
+            int idx = ui->tabWidget->addTab(vulkanTab, "Screen");
+            ui->tabWidget->setCurrentIndex(idx);
+        }
         return;
     }
     
@@ -524,12 +573,6 @@ void MainWindow::openTextChannelTab(const QString &channelName) {
 
     channelHistoryState[channelName] = ChannelHistoryState{};
     textManager.requestHistory(channelName, kHistoryPageSize);
-
-    static bool closeConnected = false;
-    if (!closeConnected) {
-        connect(ui->tabWidget, &QTabWidget::tabCloseRequested, this, &MainWindow::closeTab);
-        closeConnected = true;
-    }
 }
 
 void MainWindow::updateAudioDeviceComboBox() {
@@ -631,8 +674,7 @@ void MainWindow::closeTab(int index) {
     channelHistoryState.remove(channelName);
     QWidget *tab = ui->tabWidget->widget(index);
     ui->tabWidget->removeTab(index);
-    // Don't delete persistent tabs that can be re-opened
-    if (tab != settingsTab && tab != adminPanelTab && tab != vulkanTab) {
+    if (tab != settingsTab && tab != adminPanelTab && tab != vulkanTab && tab != welcomeTab) {
         delete tab;
     }
 }

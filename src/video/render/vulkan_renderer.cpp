@@ -1,7 +1,6 @@
 #include "vulkan_renderer.hpp"
 
 VulkanWidget::VulkanWidget(VulkanWindow *w) : m_window(w) {
-    QWidget *wrapper = QWidget::createWindowContainer(w);
 }
 
 void VulkanWidget::onFrameQueued(int colorValue) {
