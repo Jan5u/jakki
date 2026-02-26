@@ -143,7 +143,6 @@ QWidget* Video::createVulkanTab(QWidget *parent) {
     
     QWidget *vulkanTab = QWidget::createWindowContainer(m_vulkanWindow, parent);
     vulkanTab->setMinimumSize(QSize(640, 480));
-    vulkanTab->setMaximumSize(QSize(1920, 1080));
     std::println("Vulkan tab created");
     
     return vulkanTab;
