@@ -4,10 +4,12 @@ on:
   push:
     branches: [ "main" ]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [ "main" ]
 
 jobs:
   build-windows:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: windows-2025-vs2026
     env:
       VCPKG_ENABLE_METRICS: 0
