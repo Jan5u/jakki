@@ -52,6 +52,7 @@ class Network : public QObject {
     signals:
         void channelsReceived(const QStringList& channels);
         void userJoinedChannel(const QString& user, const QString& channel);
+        void userLeftChannel(const QString& user, const QString& channel);
         void authenticationFailed(const QString& reason);
         void adminResponseReceived(const QString& request, const QString& jsonData);
         void textMessageReceived(const QString& channel, const QString& sender, const QString& content, bool compressed);

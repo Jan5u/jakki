@@ -2,7 +2,7 @@
 #include "video/video.hpp"
 #include <QJsonObject>
 
-enum class EventType { ServerInfo, Message, UserJoin, AdminResponse, HistoryResponse, EmoteListResponse, TypingIndicator, UserList, UserStatusChange, Unknown };
+enum class EventType { ServerInfo, Message, UserJoin, UserLeave, AdminResponse, HistoryResponse, EmoteListResponse, TypingIndicator, UserList, UserStatusChange, Unknown };
 
 Network::Network() : audioManager(nullptr), authManager(nullptr) {}
 
@@ -281,6 +281,7 @@ EventType getEventType(const std::string &type) {
     if (type == "ServerInfo") return EventType::ServerInfo;
     if (type == "Message") return EventType::Message;
     if (type == "UserJoin") return EventType::UserJoin;
+    if (type == "UserLeave") return EventType::UserLeave;
     if (type == "admin_response") return EventType::AdminResponse;
     if (type == "history_response") return EventType::HistoryResponse;
     if (type == "emote_list_response") return EventType::EmoteListResponse;
@@ -325,6 +326,14 @@ void Network::handleEventMessage(std::string msg) {
             QString channel = QString::fromStdString(j["channel"].get<std::string>());
             std::cout << "User " << user.toStdString() << " joined channel " << channel.toStdString() << std::endl;
             emit userJoinedChannel(user, channel);
+        }
+        break;
+    case EventType::UserLeave:
+        if (j.contains("user") && j.contains("channel")) {
+            QString user = QString::fromStdString(j["user"].get<std::string>());
+            QString channel = QString::fromStdString(j["channel"].get<std::string>());
+            std::cout << "User " << user.toStdString() << " left channel " << channel.toStdString() << std::endl;
+            emit userLeftChannel(user, channel);
         }
         break;
     case EventType::AdminResponse:

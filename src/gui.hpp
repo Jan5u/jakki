@@ -120,6 +120,7 @@ class MainWindow : public QMainWindow {
     void onTreeViewItemClicked(const QModelIndex &index);
     void closeTab(int index);
     void onUserJoinedChannel(const QString &user, const QString &channel);
+    void onUserLeftChannel(const QString &user, const QString &channel);
     void setInputDevice();
     void setOutputDevice();
     void setInputDeviceWithoutSaving();

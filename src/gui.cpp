@@ -22,6 +22,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         networkManager.requestUserList();
     });
     connect(&networkManager, &Network::userJoinedChannel, this, &MainWindow::onUserJoinedChannel);
+    connect(&networkManager, &Network::userLeftChannel, this, &MainWindow::onUserLeftChannel);
     connect(&networkManager, &Network::authenticationFailed, this, [this](const QString& reason) {
         qDebug() << "Authentication failed:" << reason;
         if (welcomeConnectButton)
@@ -827,6 +828,26 @@ void MainWindow::onChatScrolled(int value) {
     state.loading = true;
     qDebug() << "Fetching older history for" << channelName << "before ID" << state.oldestMessageId;
     textManager.requestHistory(channelName, kHistoryPageSize, state.oldestMessageId);
+}
+
+void MainWindow::onUserLeftChannel(const QString& user, const QString& channel) {
+    qDebug() << "User" << user << "left channel" << channel;
+    for (int i = 0; i < model->rowCount(); ++i) {
+        QStandardItem* channelItem = model->item(i);
+        if (!channelItem || channelItem->text() != channel)
+            continue;
+        for (int j = 0; j < channelItem->rowCount(); ++j) {
+            QStandardItem* userItem = channelItem->child(j);
+            if (userItem && userItem->text() == user) {
+                channelItem->removeRow(j);
+                qDebug() << "Removed user" << user << "from channel" << channel;
+                return;
+            }
+        }
+        qDebug() << "User" << user << "not found in channel" << channel;
+        return;
+    }
+    qDebug() << "Channel" << channel << "not found in tree";
 }
 
 void MainWindow::onUserJoinedChannel(const QString& user, const QString& channel) {
