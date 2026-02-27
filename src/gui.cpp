@@ -84,11 +84,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     sbMicBtn = makeStatusBtn(":/icons/mic.svg", "Mute");
     sbHeadphonesBtn = makeStatusBtn(":/icons/headphones.svg", "Deafen");
     sbMonitorBtn = makeStatusBtn(":/icons/monitor.svg", "Screen Share");
+    sbDisconnectVoiceBtn = makeStatusBtn(":/icons/phone-missed.svg", "Disconnect Voice");
     sbUsersBtn = makeStatusBtn(":/icons/users.svg", "Users");
     statusBar()->addWidget(sbChannelsBtn);
     statusBar()->addWidget(sbMicBtn);
     statusBar()->addWidget(sbHeadphonesBtn);
     statusBar()->addWidget(sbMonitorBtn);
+    statusBar()->addWidget(sbDisconnectVoiceBtn);
     statusBar()->addPermanentWidget(sbUsersBtn);
     connect(sbChannelsBtn, &QToolButton::clicked, this, [this]() {
         ui->channelsTreeView->setVisible(!ui->channelsTreeView->isVisible());
@@ -97,6 +99,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         ui->usersListTreeWidget->setVisible(!ui->usersListTreeWidget->isVisible());
     });
     connect(sbMonitorBtn, &QToolButton::clicked, this, &MainWindow::showScreenShareDialog);
+    connect(sbDisconnectVoiceBtn, &QToolButton::clicked, this, &MainWindow::disconnectVoice);
 
     model = new QStandardItemModel(this);
     model->setHorizontalHeaderLabels({"Channels"});
@@ -373,6 +376,15 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
         }
     }
     return QMainWindow::eventFilter(obj, event);
+}
+
+void MainWindow::disconnectVoice() {
+    if (!networkManager.isInVoiceChannel()) {
+        qDebug() << "Not in a voice channel";
+        return;
+    }
+    qDebug() << "Disconnecting from voice channel";
+    networkManager.leaveVoiceChannel();
 }
 
 void MainWindow::disconnect() {

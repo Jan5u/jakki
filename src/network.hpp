@@ -41,6 +41,8 @@ class Network : public QObject {
         void disconnectQUIC();
         void sendVoicePackets(std::vector<uint8_t> encodedData);
         void joinVoiceChannel(QString channelName);
+        void leaveVoiceChannel();
+        bool isInVoiceChannel() const { return inVoiceChannel; }
         void joinScreenShare(QString userName);
         void sendScreensharePackets(std::vector<uint8_t> encodedData);
         bool isConnected() const { return connected; }
@@ -93,4 +95,5 @@ class Network : public QObject {
         Audio* audioManager;
         Auth* authManager;
         Video* videoManager = nullptr;
+        bool inVoiceChannel = false;
 };

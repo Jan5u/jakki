@@ -555,6 +555,7 @@ void Network::disconnectQUIC() {
         SSL_CTX_free(ctx);
         std::cout << "connected=false" << std::endl;
         connected = false;
+        inVoiceChannel = false;
     }
 }
 
@@ -605,6 +606,8 @@ void Network::joinVoiceChannel(QString channelName) {
         if (isOk) {
             std::cout << "Successfully joined voice channel: " << channelNameStr << std::endl;
 
+            inVoiceChannel = true;
+
             // Initialize record and playback loops
             audioManager->startAudioThread();
 
@@ -616,6 +619,31 @@ void Network::joinVoiceChannel(QString channelName) {
     } else {
         std::cerr << "Failed to read confirmation from voice stream" << std::endl;
     }
+}
+
+void Network::leaveVoiceChannel() {
+    if (!connected || !inVoiceChannel) {
+        std::cout << "Not in a voice channel, nothing to leave" << std::endl;
+        return;
+    }
+
+    json event;
+    event["type"] = "leaveVoice";
+    std::string eventStr = event.dump() + "\n";
+
+    size_t written = 0;
+    int result = SSL_write_ex(eventStream, eventStr.c_str(), eventStr.length(), &written);
+    if (!result) {
+        std::cerr << "Failed to send leaveVoice event" << std::endl;
+    } else {
+        std::cout << "Sent leaveVoice event" << std::endl;
+    }
+
+    if (audioManager) {
+        audioManager->stopAudio();
+    }
+
+    inVoiceChannel = false;
 }
 
 void Network::joinScreenShare(QString userName) {

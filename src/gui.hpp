@@ -84,6 +84,7 @@ class MainWindow : public QMainWindow {
     QToolButton *sbMicBtn;
     QToolButton *sbHeadphonesBtn;
     QToolButton *sbMonitorBtn;
+    QToolButton *sbDisconnectVoiceBtn;
     QToolButton *sbUsersBtn;
     bool isInitialDeviceSetup = true;
     QString currentInputDeviceId;
@@ -111,6 +112,7 @@ class MainWindow : public QMainWindow {
 
   private slots:
     void disconnect();
+    void disconnectVoice();
     void showConnectDialog();
     void showContextMenu(const QPoint &pos);
     void sendMessage();
