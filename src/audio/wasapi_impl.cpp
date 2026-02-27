@@ -576,7 +576,9 @@ void WasapiImpl::captureLoop() {
             
             // Process complete Opus frames (960 samples per channel)
             while (audioBuffer.size() >= OPUS_FRAME_SAMPLES) {
-                encodePacketWithOpusFloat(audioBuffer.data(), OPUS_FRAME_SAMPLES);
+                if (isAboveVoiceGate(audioBuffer.data(), OPUS_FRAME_SAMPLES)) {
+                    encodePacketWithOpusFloat(audioBuffer.data(), OPUS_FRAME_SAMPLES);
+                }
                 
                 // Remove processed samples from buffer
                 audioBuffer.erase(audioBuffer.begin(), audioBuffer.begin() + OPUS_FRAME_SAMPLES);
