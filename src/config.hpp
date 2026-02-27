@@ -21,6 +21,10 @@ class Config {
     void setOutputDevice(const std::string &deviceId);
     std::string getTheme() const;
     void setTheme(const std::string &theme);
+    float getVoiceGateThreshold() const;
+    void setVoiceGateThreshold(float thresholdDb);
+    bool getVoiceGateEnabled() const;
+    void setVoiceGateEnabled(bool enabled);
     void setSupportedNVIDIAEncoders(const std::vector<std::string>& encoders);
     void setSupportedVulkanEncoders(const std::vector<std::string>& encoders);
     std::vector<std::string> getSupportedNVIDIAEncoders() const;

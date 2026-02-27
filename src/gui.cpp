@@ -215,6 +215,18 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(uiSettings->playbackVolumeSlider, &QSlider::valueChanged, this, &MainWindow::onPlaybackVolumeChanged);
     connect(uiSettings->captureVolumeSlider, &QSlider::valueChanged, this, &MainWindow::onCaptureVolumeChanged);
 
+    float savedThreshold = config.getVoiceGateThreshold();
+    bool savedGateEnabled = config.getVoiceGateEnabled();
+    audioManager.setVoiceGateThreshold(savedThreshold);
+    audioManager.setVoiceGateEnabled(savedGateEnabled);
+    uiSettings->voiceGateSlider->setValue(static_cast<int>(savedThreshold));
+    uiSettings->voiceGateValueLabel->setText(QString::number(static_cast<int>(savedThreshold)) + " dB");
+    uiSettings->voiceGateCheckBox->setChecked(savedGateEnabled);
+    uiSettings->voiceGateSlider->setEnabled(savedGateEnabled);
+
+    connect(uiSettings->voiceGateSlider, &QSlider::valueChanged, this, &MainWindow::onVoiceGateThresholdChanged);
+    connect(uiSettings->voiceGateCheckBox, &QCheckBox::toggled, this, &MainWindow::onVoiceGateEnabledChanged);
+
     uiSettings->StyleSelectComboBox->clear();
     QDirIterator it(":/styles", QStringList() << "*.qss", QDir::Files);
     while (it.hasNext()) {
@@ -987,6 +999,21 @@ void MainWindow::onVolumeChanged(bool isInput, float volume) {
         uiSettings->playbackVolumeSlider->setValue(sliderValue);
         uiSettings->playbackVolumeSlider->blockSignals(false);
     }
+}
+
+void MainWindow::onVoiceGateThresholdChanged(int value) {
+    float thresholdDb = static_cast<float>(value);
+    uiSettings->voiceGateValueLabel->setText(QString::number(value) + " dB");
+    audioManager.setVoiceGateThreshold(thresholdDb);
+    config.setVoiceGateThreshold(thresholdDb);
+    qDebug() << "Voice gate threshold changed to:" << value << "dB";
+}
+
+void MainWindow::onVoiceGateEnabledChanged(bool enabled) {
+    audioManager.setVoiceGateEnabled(enabled);
+    config.setVoiceGateEnabled(enabled);
+    uiSettings->voiceGateSlider->setEnabled(enabled);
+    qDebug() << "Voice gate" << (enabled ? "enabled" : "disabled");
 }
 
 void MainWindow::onStyleChanged(int index) {

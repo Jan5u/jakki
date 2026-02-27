@@ -52,6 +52,12 @@ public:
     void setVolume(bool isInput, float volume);
     float getVolume(bool isInput) const;
 
+    // Voice gate control
+    void setVoiceGateThreshold(float thresholdDb);
+    float getVoiceGateThreshold() const;
+    void setVoiceGateEnabled(bool enabled);
+    bool isVoiceGateEnabled() const;
+
 signals:
     void deviceListChanged();
     void defaultDeviceChanged(bool isInput);

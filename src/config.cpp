@@ -161,6 +161,36 @@ void Config::setTheme(const std::string &theme) {
     std::cout << "Theme set to: " << theme << std::endl;
 }
 
+float Config::getVoiceGateThreshold() const {
+    auto sectionIt = data.find("Audio");
+    if (sectionIt == data.end()) return -40.0f;
+    auto keyIt = sectionIt->second.find("VoiceGateThreshold");
+    if (keyIt == sectionIt->second.end()) return -40.0f;
+    try {
+        return std::stof(keyIt->second);
+    } catch (...) {
+        return -40.0f;
+    }
+}
+
+void Config::setVoiceGateThreshold(float thresholdDb) {
+    data["Audio"]["VoiceGateThreshold"] = std::to_string(thresholdDb);
+    save();
+}
+
+bool Config::getVoiceGateEnabled() const {
+    auto sectionIt = data.find("Audio");
+    if (sectionIt == data.end()) return true;
+    auto keyIt = sectionIt->second.find("VoiceGateEnabled");
+    if (keyIt == sectionIt->second.end()) return true;
+    return keyIt->second == "1" || keyIt->second == "true";
+}
+
+void Config::setVoiceGateEnabled(bool enabled) {
+    data["Audio"]["VoiceGateEnabled"] = enabled ? "1" : "0";
+    save();
+}
+
 static std::string join(const std::vector<std::string>& vec, const char* delim = ",") {
     std::ostringstream oss;
     for (size_t i = 0; i < vec.size(); ++i) {

@@ -131,6 +131,8 @@ class MainWindow : public QMainWindow {
     void onPlaybackVolumeChanged(int value);
     void onCaptureVolumeChanged(int value);
     void onVolumeChanged(bool isInput, float volume);
+    void onVoiceGateThresholdChanged(int value);
+    void onVoiceGateEnabledChanged(bool enabled);
     void onStyleChanged(int index);
     void requestUsersDatabase();
     void handleAdminResponse(const QString& request, const QString& jsonData);
