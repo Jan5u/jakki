@@ -355,6 +355,24 @@ MainWindow::~MainWindow() {
 }
 
 bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
+    if (event->type() == QEvent::MouseMove) {
+        auto *viewport = qobject_cast<QWidget *>(obj);
+        if (viewport) {
+            auto *browser = qobject_cast<QTextBrowser *>(viewport->parent());
+            if (browser) {
+                auto *mouseEvent = static_cast<QMouseEvent *>(event);
+                QPointF docPos(mouseEvent->pos().x() + browser->horizontalScrollBar()->value(),
+                               mouseEvent->pos().y() + browser->verticalScrollBar()->value());
+                int hitPos = browser->document()->documentLayout()->hitTest(docPos, Qt::ExactHit);
+                Qt::CursorShape shape = Qt::ArrowCursor;
+                if (hitPos != -1) {
+                    shape = browser->anchorAt(mouseEvent->pos()).isEmpty() ? Qt::IBeamCursor : Qt::PointingHandCursor;
+                }
+                viewport->setCursor(shape);
+                return false;
+            }
+        }
+    }
     if (event->type() == QEvent::KeyPress) {
         auto *textEdit = qobject_cast<QTextEdit *>(obj);
         if (textEdit && textEdit->objectName() == "messageLineEdit") {
@@ -569,6 +587,7 @@ void MainWindow::openTextChannelTab(const QString &channelName) {
     completer->attachToInput(messageInput);
 
     QTextBrowser *textBrowser = uiTextChannel.textBrowser;
+    textBrowser->viewport()->installEventFilter(this);
 
     const int inputMinH = 36;
     const int inputMaxH = 150;

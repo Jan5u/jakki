@@ -34,6 +34,8 @@
 #include <QPainter>
 #include <QTreeWidgetItem>
 #include <QPushButton>
+#include <QAbstractTextDocumentLayout>
+#include <QMouseEvent>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
