@@ -13,6 +13,7 @@ jobs:
     runs-on: windows-2025-vs2026
     env:
       VCPKG_ENABLE_METRICS: 0
+      VCPKG_DEFAULT_BINARY_CACHE: ~/.cache/vcpkg/archives
     steps:
       - uses: actions/checkout@v6
 
@@ -21,14 +22,24 @@ jobs:
         with:
           nsis-version: '3.11'
 
+      - name: Restore vcpkg binary cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-binary-${{ runner.os }}-${{ matrix.triplet }}
+          restore-keys: |
+            vcpkg-binary-${{ runner.os }}-${{ matrix.triplet }}-
+
+      - name: Restore installed packages
+        uses: actions/cache/restore@v4
+        with:
+          path: build/vcpkg_installed
+          key: vcpkg-installed-${{ runner.os }}-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-installed-${{ runner.os }}-${{ matrix.triplet }}-
+
       - name: Setup CMake
         uses: lukka/get-cmake@latest
-
-      - name: Cache vcpkg
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/vcpkg_cache
-          key: vcpkg-x64-windows-release-${{ hashFiles('vcpkg.json', 'vcpkg_overlay/**', 'CMakeLists.txt', '**/CMakeLists.txt', 'CMakePresets.json') }}
 
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
@@ -44,6 +55,18 @@ jobs:
           configurePreset: 'ci-vcpkg-release'
           buildPreset: 'ci-vcpkg-build'
           packagePreset: 'ci-vcpkg-package'
+
+      - name: Save vcpkg binary cache
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-binary-${{ runner.os }}-${{ matrix.triplet }}
+
+      - name: Save installed packages
+        uses: actions/cache/save@v4
+        with:
+          path: build/vcpkg_installed
+          key: vcpkg-installed-${{ runner.os }}-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json') }}
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v6
