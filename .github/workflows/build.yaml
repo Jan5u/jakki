@@ -21,14 +21,16 @@ jobs:
         with:
           nsis-version: '3.11'
 
-      - name: Setup CMake
-        uses: lukka/get-cmake@latest
-
       - name: Cache vcpkg
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/vcpkg_cache
-          key: vcpkg-x64-windows-release-${{ hashFiles('vcpkg.json', 'vcpkg_overlay/**', 'CMakeLists.txt', '**/CMakeLists.txt', 'CMakePresets.json') }}
+          key: vcpkg-${{ runner.os }}-${{ matrix.triplet }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-
+
+      - name: Setup CMake
+        uses: lukka/get-cmake@latest
 
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
