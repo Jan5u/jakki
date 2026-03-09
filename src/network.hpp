@@ -41,22 +41,28 @@ class Network : public QObject {
         void disconnectQUIC();
         void sendVoicePackets(std::vector<uint8_t> encodedData);
         void joinVoiceChannel(QString channelName);
+        void leaveVoiceChannel();
+        bool isInVoiceChannel() const { return inVoiceChannel; }
         void joinScreenShare(QString userName);
         void sendScreensharePackets(std::vector<uint8_t> encodedData);
         bool isConnected() const { return connected; }
         void sendAdminMessage(const QString& requestType);
         void sendTextMessage(const QString& jsonMessage);
+        void requestUserList();
         void setVideoManager(Video* video);
 
     signals:
         void channelsReceived(const QStringList& channels);
         void userJoinedChannel(const QString& user, const QString& channel);
+        void userLeftChannel(const QString& user, const QString& channel);
         void authenticationFailed(const QString& reason);
         void adminResponseReceived(const QString& request, const QString& jsonData);
         void textMessageReceived(const QString& channel, const QString& sender, const QString& content, bool compressed);
         void historyResponseReceived(const QString& channel, const QJsonArray& messages);
         void emoteListReceived(const QJsonArray& emotes);
         void typingIndicatorReceived(const QString& channel, const QString& user);
+        void usersListReceived(const QStringList& onlineUsers, const QStringList& offlineUsers);
+        void userStatusChanged(const QString& user, bool online);
 
 
     private:
@@ -89,4 +95,5 @@ class Network : public QObject {
         Audio* audioManager;
         Auth* authManager;
         Video* videoManager = nullptr;
+        bool inVoiceChannel = false;
 };

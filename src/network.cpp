@@ -2,7 +2,7 @@
 #include "video/video.hpp"
 #include <QJsonObject>
 
-enum class EventType { ServerInfo, Message, UserJoin, AdminResponse, HistoryResponse, EmoteListResponse, TypingIndicator, Unknown };
+enum class EventType { ServerInfo, Message, UserJoin, UserLeave, AdminResponse, HistoryResponse, EmoteListResponse, TypingIndicator, UserList, UserStatusChange, Unknown };
 
 Network::Network() : audioManager(nullptr), authManager(nullptr) {}
 
@@ -211,7 +211,7 @@ void Network::connectQUIC(QString address, QString port) {
 }
 
 void Network::sendMessage(SSL *stream) {
-    const char *message = "hello";
+    const char *message = "hello\n";
 
     int ret = SSL_write(stream, message, strlen(message));
     if (ret <= 0) {
@@ -259,14 +259,35 @@ void Network::sendTextMessage(const QString &jsonMessage) {
     }
 }
 
+void Network::requestUserList() {
+    if (!connected || !eventStream) {
+        std::cerr << "Cannot request user list: not connected or no event stream\n";
+        return;
+    }
+    json request;
+    request["type"] = "user_list_request";
+    QString jsonString = QString::fromStdString(request.dump());
+    QByteArray messageBytes = jsonString.toUtf8();
+    messageBytes.append('\n');
+
+    std::cout << "Requesting user list" << std::endl;
+    int ret = SSL_write(eventStream, messageBytes.constData(), messageBytes.size());
+    if (ret <= 0) {
+        std::cerr << "Failed to send user list request" << std::endl;
+    }
+}
+
 EventType getEventType(const std::string &type) {
     if (type == "ServerInfo") return EventType::ServerInfo;
     if (type == "Message") return EventType::Message;
     if (type == "UserJoin") return EventType::UserJoin;
+    if (type == "UserLeave") return EventType::UserLeave;
     if (type == "admin_response") return EventType::AdminResponse;
     if (type == "history_response") return EventType::HistoryResponse;
     if (type == "emote_list_response") return EventType::EmoteListResponse;
     if (type == "typing_indicator") return EventType::TypingIndicator;
+    if (type == "user_list") return EventType::UserList;
+    if (type == "user_status_change") return EventType::UserStatusChange;
     return EventType::Unknown;
 }
 
@@ -307,6 +328,14 @@ void Network::handleEventMessage(std::string msg) {
             emit userJoinedChannel(user, channel);
         }
         break;
+    case EventType::UserLeave:
+        if (j.contains("user") && j.contains("channel")) {
+            QString user = QString::fromStdString(j["user"].get<std::string>());
+            QString channel = QString::fromStdString(j["channel"].get<std::string>());
+            std::cout << "User " << user.toStdString() << " left channel " << channel.toStdString() << std::endl;
+            emit userLeftChannel(user, channel);
+        }
+        break;
     case EventType::AdminResponse:
         if (j.contains("request") && j.contains("data")) {
             QString request = QString::fromStdString(j["request"].get<std::string>());
@@ -331,10 +360,14 @@ void Network::handleEventMessage(std::string msg) {
             QJsonArray messagesArray;
             for (const auto &msg : j["messages"]) {
                 QJsonObject msgObj;
-                if (msg.contains("id")) msgObj["id"] = msg["id"].get<int>();
-                if (msg.contains("user")) msgObj["user"] = QString::fromStdString(msg["user"].get<std::string>());
-                if (msg.contains("content")) msgObj["content"] = QString::fromStdString(msg["content"].get<std::string>());
-                if (msg.contains("timestamp")) msgObj["timestamp"] = QString::fromStdString(msg["timestamp"].get<std::string>());
+                if (msg.contains("id"))
+                    msgObj["id"] = msg["id"].get<int>();
+                if (msg.contains("user"))
+                    msgObj["user"] = QString::fromStdString(msg["user"].get<std::string>());
+                if (msg.contains("content"))
+                    msgObj["content"] = QString::fromStdString(msg["content"].get<std::string>());
+                if (msg.contains("timestamp"))
+                    msgObj["timestamp"] = QString::fromStdString(msg["timestamp"].get<std::string>());
                 msgObj["compressed"] = msg.value("compressed", false);
                 messagesArray.append(msgObj);
             }
@@ -347,8 +380,10 @@ void Network::handleEventMessage(std::string msg) {
             QJsonArray emotesArray;
             for (const auto &emote : j["emotes"]) {
                 QJsonObject emoteObj;
-                if (emote.contains("name")) emoteObj["name"] = QString::fromStdString(emote["name"].get<std::string>());
-                if (emote.contains("data")) emoteObj["data"] = QString::fromStdString(emote["data"].get<std::string>());
+                if (emote.contains("name"))
+                    emoteObj["name"] = QString::fromStdString(emote["name"].get<std::string>());
+                if (emote.contains("data"))
+                    emoteObj["data"] = QString::fromStdString(emote["data"].get<std::string>());
                 emotesArray.append(emoteObj);
             }
             std::cout << "Emote list received: " << emotesArray.size() << " emotes" << std::endl;
@@ -360,6 +395,35 @@ void Network::handleEventMessage(std::string msg) {
             QString channel = QString::fromStdString(j["channel"].get<std::string>());
             QString user = QString::fromStdString(j["user"].get<std::string>());
             emit typingIndicatorReceived(channel, user);
+        }
+        break;
+    case EventType::UserList: {
+        QStringList onlineUsers;
+        QStringList offlineUsers;
+        if (j.contains("online") && j["online"].is_array()) {
+            for (const auto &user : j["online"]) {
+                if (user.is_string()) {
+                    onlineUsers << QString::fromStdString(user.get<std::string>());
+                }
+            }
+        }
+        if (j.contains("offline") && j["offline"].is_array()) {
+            for (const auto &user : j["offline"]) {
+                if (user.is_string()) {
+                    offlineUsers << QString::fromStdString(user.get<std::string>());
+                }
+            }
+        }
+        std::cout << "User list received: " << onlineUsers.size() << " online, " << offlineUsers.size() << " offline" << std::endl;
+        emit usersListReceived(onlineUsers, offlineUsers);
+    } break;
+    case EventType::UserStatusChange:
+        if (j.contains("user") && j.contains("status")) {
+            QString user = QString::fromStdString(j["user"].get<std::string>());
+            QString status = QString::fromStdString(j["status"].get<std::string>());
+            bool online = (status == "online");
+            std::cout << "User status change: " << user.toStdString() << " -> " << status.toStdString() << std::endl;
+            emit userStatusChanged(user, online);
         }
         break;
     default:
@@ -491,6 +555,7 @@ void Network::disconnectQUIC() {
         SSL_CTX_free(ctx);
         std::cout << "connected=false" << std::endl;
         connected = false;
+        inVoiceChannel = false;
     }
 }
 
@@ -507,7 +572,7 @@ void Network::sendVoicePackets(std::vector<uint8_t> encodedData) {
 }
 
 void Network::sendHeartbeat() {
-    const char *message = "hb";
+    const char *message = "hb\n";
     while (true) {
         size_t written = 0;
         int result = SSL_write_ex(eventStream, message, strlen(message), &written);
@@ -541,6 +606,8 @@ void Network::joinVoiceChannel(QString channelName) {
         if (isOk) {
             std::cout << "Successfully joined voice channel: " << channelNameStr << std::endl;
 
+            inVoiceChannel = true;
+
             // Initialize record and playback loops
             audioManager->startAudioThread();
 
@@ -552,6 +619,31 @@ void Network::joinVoiceChannel(QString channelName) {
     } else {
         std::cerr << "Failed to read confirmation from voice stream" << std::endl;
     }
+}
+
+void Network::leaveVoiceChannel() {
+    if (!connected || !inVoiceChannel) {
+        std::cout << "Not in a voice channel, nothing to leave" << std::endl;
+        return;
+    }
+
+    json event;
+    event["type"] = "leaveVoice";
+    std::string eventStr = event.dump() + "\n";
+
+    size_t written = 0;
+    int result = SSL_write_ex(eventStream, eventStr.c_str(), eventStr.length(), &written);
+    if (!result) {
+        std::cerr << "Failed to send leaveVoice event" << std::endl;
+    } else {
+        std::cout << "Sent leaveVoice event" << std::endl;
+    }
+
+    if (audioManager) {
+        audioManager->stopAudio();
+    }
+
+    inVoiceChannel = false;
 }
 
 void Network::joinScreenShare(QString userName) {

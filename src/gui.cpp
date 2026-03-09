@@ -12,12 +12,21 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->actionQuit, &QAction::triggered, this, &QApplication::quit);
     connect(ui->actionDisconnect, &QAction::triggered, this, &MainWindow::disconnect);
     connect(ui->actionNew_Connection, &QAction::triggered, this, &MainWindow::showConnectDialog);
-    connect(ui->treeView, &QTreeView::customContextMenuRequested, this, &MainWindow::showContextMenu);
-    connect(ui->treeView, &QTreeView::clicked, this, &MainWindow::onTreeViewItemClicked);
+    connect(ui->actionAbout_Qt, &QAction::triggered, this, &QApplication::aboutQt);
+    connect(ui->channelsTreeView, &QTreeView::customContextMenuRequested, this, &MainWindow::showContextMenu);
+    connect(ui->channelsTreeView, &QTreeView::clicked, this, &MainWindow::onTreeViewItemClicked);
     connect(&networkManager, &Network::channelsReceived, this, &MainWindow::addChannels);
+    connect(&networkManager, &Network::usersListReceived, this, &MainWindow::onUsersListReceived);
+    connect(&networkManager, &Network::userStatusChanged, this, &MainWindow::onUserStatusChanged);
+    connect(&networkManager, &Network::channelsReceived, this, [this](const QStringList&) {
+        networkManager.requestUserList();
+    });
     connect(&networkManager, &Network::userJoinedChannel, this, &MainWindow::onUserJoinedChannel);
+    connect(&networkManager, &Network::userLeftChannel, this, &MainWindow::onUserLeftChannel);
     connect(&networkManager, &Network::authenticationFailed, this, [this](const QString& reason) {
         qDebug() << "Authentication failed:" << reason;
+        if (welcomeConnectButton)
+            welcomeConnectButton->setEnabled(true);
         // TODO: Show error dialog to user
     });
     connect(&networkManager, &Network::adminResponseReceived, this, &MainWindow::handleAdminResponse);
@@ -55,22 +64,57 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(&audioManager, &Audio::volumeChanged, this, &MainWindow::onVolumeChanged);
     connect(ui->actionShare_Screen, &QAction::triggered, this, &MainWindow::showScreenShareDialog);
 
+    auto whiteIcon = [](const QString &iconPath) {
+        QPixmap pixmap(iconPath);
+        QPainter painter(&pixmap);
+        painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+        painter.fillRect(pixmap.rect(), Qt::white);
+        painter.end();
+        return QIcon(pixmap);
+    };
+    auto makeStatusBtn = [this, &whiteIcon](const QString &iconPath, const QString &toolTip) {
+        QToolButton *btn = new QToolButton(this);
+        btn->setIcon(whiteIcon(iconPath));
+        btn->setToolTip(toolTip);
+        btn->setAutoRaise(true);
+        btn->setIconSize(QSize(14, 14));
+        return btn;
+    };
+    sbChannelsBtn = makeStatusBtn(":/icons/list-tree.svg", "Channels");
+    sbMicBtn = makeStatusBtn(":/icons/mic.svg", "Mute");
+    sbHeadphonesBtn = makeStatusBtn(":/icons/headphones.svg", "Deafen");
+    sbMonitorBtn = makeStatusBtn(":/icons/monitor.svg", "Screen Share");
+    sbDisconnectVoiceBtn = makeStatusBtn(":/icons/phone-missed.svg", "Disconnect Voice");
+    sbUsersBtn = makeStatusBtn(":/icons/users.svg", "Users");
+    statusBar()->addWidget(sbChannelsBtn);
+    statusBar()->addWidget(sbMicBtn);
+    statusBar()->addWidget(sbHeadphonesBtn);
+    statusBar()->addWidget(sbMonitorBtn);
+    statusBar()->addWidget(sbDisconnectVoiceBtn);
+    statusBar()->addPermanentWidget(sbUsersBtn);
+    connect(sbChannelsBtn, &QToolButton::clicked, this, [this]() {
+        ui->channelsTreeView->setVisible(!ui->channelsTreeView->isVisible());
+    });
+    connect(sbUsersBtn, &QToolButton::clicked, this, [this]() {
+        ui->usersListTreeWidget->setVisible(!ui->usersListTreeWidget->isVisible());
+    });
+    connect(sbMonitorBtn, &QToolButton::clicked, this, &MainWindow::showScreenShareDialog);
+    connect(sbDisconnectVoiceBtn, &QToolButton::clicked, this, &MainWindow::disconnectVoice);
+
     model = new QStandardItemModel(this);
     model->setHorizontalHeaderLabels({"Channels"});
 
-    ui->treeView->setModel(model);
-    ui->treeView->expandAll();
+    ui->channelsTreeView->setModel(model);
+    ui->channelsTreeView->expandAll();
 
     settingsTab = new QWidget;
     uiSettings = new Ui::SettingsTab;
     uiSettings->setupUi(settingsTab);
-    ui->tabWidget->addTab(settingsTab, "Settings");
 
     // Setup admin panel tab
     adminPanelTab = new QWidget;
     uiAdminPanel = new Ui::adminPanelTab;
     uiAdminPanel->setupUi(adminPanelTab);
-    ui->tabWidget->addTab(adminPanelTab, "Admin Panel");
     
     // Connect admin panel signals
     connect(uiAdminPanel->accountspushButton, &QPushButton::clicked, this, &MainWindow::requestUsersDatabase);
@@ -80,18 +124,80 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     accountsModel = new QStandardItemModel(this);
     accountsModel->setHorizontalHeaderLabels({"ID", "Username", "Public Key", "Admin", "Approved", "Created", "Last Auth"});
     uiAdminPanel->accountstableView->setModel(accountsModel);
-    
 
     vulkanWindow = videoManager.createVulkanWindow();
     connect(vulkanWindow, &VulkanWindow::frameQueued, this, &MainWindow::onFrameQueued);
     vulkanTab = videoManager.createVulkanTab(this);
     if (vulkanTab) {
-        ui->tabWidget->addTab(vulkanTab, "Screen");
+        vulkanTab->hide();
     }
     videoManager.startDecodeThread();
-    
+
+    welcomeTab = new QWidget;
+    QVBoxLayout *welcomeLayout = new QVBoxLayout(welcomeTab);
+    welcomeLayout->setAlignment(Qt::AlignCenter);
+    QLabel *logoLabel = new QLabel;
+    QPixmap logo(":/images/icon.svg");
+    logoLabel->setPixmap(logo.scaled(96, 96, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    logoLabel->setAlignment(Qt::AlignCenter);
+    QLabel *welcomeLabel = new QLabel("Welcome");
+    welcomeLabel->setAlignment(Qt::AlignCenter);
+    QFont welcomeFont = welcomeLabel->font();
+    welcomeFont.setPointSize(18);
+    welcomeLabel->setFont(welcomeFont);
+    welcomeLayout->addWidget(logoLabel);
+    welcomeLayout->addWidget(welcomeLabel);
+    welcomeConnectButton = new QPushButton("Connect to Server");
+    welcomeConnectButton->setFixedWidth(220);
+    welcomeLayout->addWidget(welcomeConnectButton, 0, Qt::AlignCenter);
+    welcomeConnectButton->setEnabled(!networkManager.isConnected());
+    connect(welcomeConnectButton, &QPushButton::clicked, this, &MainWindow::showConnectDialog);
+    ui->tabWidget->addTab(welcomeTab, "Welcome");
+
+    QWidget *cornerWidget = new QWidget(this);
+    QHBoxLayout *cornerLayout = new QHBoxLayout(cornerWidget);
+    cornerLayout->setContentsMargins(0, 0, 0, 0);
+    cornerLayout->setSpacing(0);
+
+    tabAdminPanelBtn = new QToolButton(this);
+    tabAdminPanelBtn->setIcon(whiteIcon(":/icons/shield-user.svg"));
+    tabAdminPanelBtn->setToolTip("Admin Panel");
+    tabAdminPanelBtn->setAutoRaise(true);
+    tabAdminPanelBtn->setIconSize(QSize(16, 16));
+    connect(tabAdminPanelBtn, &QToolButton::clicked, this, [this]() {
+        for (int i = 0; i < ui->tabWidget->count(); ++i) {
+            if (ui->tabWidget->tabText(i) == "Admin Panel") {
+                ui->tabWidget->setCurrentIndex(i);
+                return;
+            }
+        }
+        int idx = ui->tabWidget->addTab(adminPanelTab, "Admin Panel");
+        ui->tabWidget->setCurrentIndex(idx);
+    });
+
+    tabSettingsBtn = new QToolButton(this);
+    tabSettingsBtn->setIcon(whiteIcon(":/icons/settings.svg"));
+    tabSettingsBtn->setToolTip("Settings");
+    tabSettingsBtn->setAutoRaise(true);
+    tabSettingsBtn->setIconSize(QSize(16, 16));
+    connect(tabSettingsBtn, &QToolButton::clicked, this, [this]() {
+        for (int i = 0; i < ui->tabWidget->count(); ++i) {
+            if (ui->tabWidget->tabText(i) == "Settings") {
+                ui->tabWidget->setCurrentIndex(i);
+                return;
+            }
+        }
+        int idx = ui->tabWidget->addTab(settingsTab, "Settings");
+        ui->tabWidget->setCurrentIndex(idx);
+    });
+
+    cornerLayout->addWidget(tabAdminPanelBtn);
+    cornerLayout->addWidget(tabSettingsBtn);
+    menuBar()->setCornerWidget(cornerWidget, Qt::TopRightCorner);
+
     networkManager.setVideoManager(&videoManager);
-    
+    connect(ui->tabWidget, &QTabWidget::tabCloseRequested, this, &MainWindow::closeTab);
+
     // Initialize audio device combo boxes
     updateAudioDeviceComboBox();
 
@@ -290,13 +396,41 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
     return QMainWindow::eventFilter(obj, event);
 }
 
+void MainWindow::disconnectVoice() {
+    if (!networkManager.isInVoiceChannel()) {
+        qDebug() << "Not in a voice channel";
+        return;
+    }
+    qDebug() << "Disconnecting from voice channel";
+    networkManager.leaveVoiceChannel();
+}
+
 void MainWindow::disconnect() {
     qDebug("disconnect");
     networkManager.disconnectQUIC();
-    
-    // Clear the channel list
+    if (welcomeConnectButton)
+        welcomeConnectButton->setEnabled(true);
+
     model->clear();
     model->setHorizontalHeaderLabels({"Channels"});
+
+    ui->usersListTreeWidget->clear();
+
+    channelHistoryState.clear();
+    typingThrottleTimers.clear();
+    typingUserTimers.clear();
+
+    if (vulkanTab) {
+        int idx = ui->tabWidget->indexOf(vulkanTab);
+        if (idx >= 0)
+            ui->tabWidget->removeTab(idx);
+    }
+
+    for (int i = ui->tabWidget->count() - 1; i >= 0; --i) {
+        QWidget *tab = ui->tabWidget->widget(i);
+        ui->tabWidget->removeTab(i);
+        delete tab;
+    }
 }
 
 void MainWindow::showConnectDialog() {
@@ -320,11 +454,13 @@ void MainWindow::showConnectDialog() {
         }
         
         networkManager.connectToServer(address, port);
+        if (welcomeConnectButton)
+            welcomeConnectButton->setEnabled(false);
     }
 }
 
 void MainWindow::showContextMenu(const QPoint &pos) {
-    QModelIndex index = ui->treeView->indexAt(pos);
+    QModelIndex index = ui->channelsTreeView->indexAt(pos);
     if (!index.isValid()) return;
 
     QMenu *menu = new QMenu(this);
@@ -342,7 +478,7 @@ void MainWindow::showContextMenu(const QPoint &pos) {
     QWidgetAction *sliderAction = new QWidgetAction(menu);
     sliderAction->setDefaultWidget(volumeWidget);
     menu->addAction(sliderAction);
-    menu->exec(ui->treeView->viewport()->mapToGlobal(pos));
+    menu->exec(ui->channelsTreeView->viewport()->mapToGlobal(pos));
 }
 
 void MainWindow::sendMessage() {
@@ -378,7 +514,7 @@ void MainWindow::addChannels(const QStringList& channels) {
         model->appendRow(channel);
     }
 
-    ui->treeView->expandAll();
+    ui->channelsTreeView->expandAll();
 }
 
 void MainWindow::onTreeViewItemClicked(const QModelIndex &index) {
@@ -392,7 +528,18 @@ void MainWindow::onTreeViewItemClicked(const QModelIndex &index) {
 
     if (item->parent()) {
         qDebug() << "item parent:" << item->parent()->text();
-        networkManager.joinScreenShare(item->text());
+
+        if (vulkanTab) {
+            for (int i = 0; i < ui->tabWidget->count(); ++i) {
+                if (ui->tabWidget->widget(i) == vulkanTab) {
+                    ui->tabWidget->setCurrentIndex(i);
+                    return;
+                }
+            }
+            networkManager.joinScreenShare(item->text());
+            int idx = ui->tabWidget->addTab(vulkanTab, "Screen");
+            ui->tabWidget->setCurrentIndex(idx);
+        }
         return;
     }
     
@@ -469,12 +616,6 @@ void MainWindow::openTextChannelTab(const QString &channelName) {
 
     channelHistoryState[channelName] = ChannelHistoryState{};
     textManager.requestHistory(channelName, kHistoryPageSize);
-
-    static bool closeConnected = false;
-    if (!closeConnected) {
-        connect(ui->tabWidget, &QTabWidget::tabCloseRequested, this, &MainWindow::closeTab);
-        closeConnected = true;
-    }
 }
 
 void MainWindow::updateAudioDeviceComboBox() {
@@ -576,7 +717,9 @@ void MainWindow::closeTab(int index) {
     channelHistoryState.remove(channelName);
     QWidget *tab = ui->tabWidget->widget(index);
     ui->tabWidget->removeTab(index);
-    delete tab;
+    if (tab != settingsTab && tab != adminPanelTab && tab != vulkanTab && tab != welcomeTab) {
+        delete tab;
+    }
 }
 
 void MainWindow::displayMessage(const QString &channel, const QString &sender, const QString &content, const QDateTime &timestamp) {
@@ -716,6 +859,26 @@ void MainWindow::onChatScrolled(int value) {
     state.loading = true;
     qDebug() << "Fetching older history for" << channelName << "before ID" << state.oldestMessageId;
     textManager.requestHistory(channelName, kHistoryPageSize, state.oldestMessageId);
+}
+
+void MainWindow::onUserLeftChannel(const QString& user, const QString& channel) {
+    qDebug() << "User" << user << "left channel" << channel;
+    for (int i = 0; i < model->rowCount(); ++i) {
+        QStandardItem* channelItem = model->item(i);
+        if (!channelItem || channelItem->text() != channel)
+            continue;
+        for (int j = 0; j < channelItem->rowCount(); ++j) {
+            QStandardItem* userItem = channelItem->child(j);
+            if (userItem && userItem->text() == user) {
+                channelItem->removeRow(j);
+                qDebug() << "Removed user" << user << "from channel" << channel;
+                return;
+            }
+        }
+        qDebug() << "User" << user << "not found in channel" << channel;
+        return;
+    }
+    qDebug() << "Channel" << channel << "not found in tree";
 }
 
 void MainWindow::onUserJoinedChannel(const QString& user, const QString& channel) {
@@ -946,4 +1109,54 @@ void MainWindow::approveSelectedUser() {
 
 void MainWindow::onFrameQueued(int colorValue) {
     // qDebug() << "Frame queued:" << colorValue;
+}
+
+void MainWindow::onUsersListReceived(const QStringList &onlineUsers, const QStringList &offlineUsers) {
+    ui->usersListTreeWidget->clear();
+
+    QTreeWidgetItem *onlineCategory = new QTreeWidgetItem(ui->usersListTreeWidget);
+    onlineCategory->setText(0, QString("Online — %1").arg(onlineUsers.size()));
+    onlineCategory->setFlags(onlineCategory->flags() & ~Qt::ItemIsSelectable);
+    for (const QString &user : onlineUsers) {
+        QTreeWidgetItem *item = new QTreeWidgetItem(onlineCategory);
+        item->setText(0, user);
+    }
+
+    QTreeWidgetItem *offlineCategory = new QTreeWidgetItem(ui->usersListTreeWidget);
+    offlineCategory->setText(0, QString("Offline — %1").arg(offlineUsers.size()));
+    offlineCategory->setFlags(offlineCategory->flags() & ~Qt::ItemIsSelectable);
+    for (const QString &user : offlineUsers) {
+        QTreeWidgetItem *item = new QTreeWidgetItem(offlineCategory);
+        item->setText(0, user);
+    }
+
+    ui->usersListTreeWidget->expandAll();
+}
+
+void MainWindow::onUserStatusChanged(const QString &user, bool online) {
+    for (int c = 0; c < ui->usersListTreeWidget->topLevelItemCount(); ++c) {
+        QTreeWidgetItem *category = ui->usersListTreeWidget->topLevelItem(c);
+        for (int i = 0; i < category->childCount(); ++i) {
+            if (category->child(i)->text(0) == user) {
+                delete category->takeChild(i);
+                break;
+            }
+        }
+    }
+
+    int targetIdx = online ? 0 : 1;
+    QTreeWidgetItem *targetCategory = ui->usersListTreeWidget->topLevelItem(targetIdx);
+    if (!targetCategory)
+        return;
+
+    QTreeWidgetItem *item = new QTreeWidgetItem(targetCategory);
+    item->setText(0, user);
+
+    for (int c = 0; c < ui->usersListTreeWidget->topLevelItemCount(); ++c) {
+        QTreeWidgetItem *category = ui->usersListTreeWidget->topLevelItem(c);
+        QString label = (c == 0) ? "Online" : "Offline";
+        category->setText(0, QString("%1 — %2").arg(label).arg(category->childCount()));
+    }
+
+    ui->usersListTreeWidget->expandAll();
 }

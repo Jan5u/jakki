@@ -29,6 +29,11 @@
 #include <QSet>
 #include <QKeyEvent>
 #include <QTimer>
+#include <QStatusBar>
+#include <QToolButton>
+#include <QPainter>
+#include <QTreeWidgetItem>
+#include <QPushButton>
 #include <QAbstractTextDocumentLayout>
 #include <QMouseEvent>
 
@@ -73,6 +78,16 @@ class MainWindow : public QMainWindow {
     QWidget *adminPanelTab;
     VulkanWindow *vulkanWindow;
     QWidget *vulkanTab;
+    QToolButton *tabSettingsBtn;
+    QToolButton *tabAdminPanelBtn;
+    QWidget *welcomeTab;
+    QPushButton *welcomeConnectButton;
+    QToolButton *sbChannelsBtn;
+    QToolButton *sbMicBtn;
+    QToolButton *sbHeadphonesBtn;
+    QToolButton *sbMonitorBtn;
+    QToolButton *sbDisconnectVoiceBtn;
+    QToolButton *sbUsersBtn;
     bool isInitialDeviceSetup = true;
     QString currentInputDeviceId;
     QString currentOutputDeviceId;
@@ -99,6 +114,7 @@ class MainWindow : public QMainWindow {
 
   private slots:
     void disconnect();
+    void disconnectVoice();
     void showConnectDialog();
     void showContextMenu(const QPoint &pos);
     void sendMessage();
@@ -108,6 +124,7 @@ class MainWindow : public QMainWindow {
     void onTreeViewItemClicked(const QModelIndex &index);
     void closeTab(int index);
     void onUserJoinedChannel(const QString &user, const QString &channel);
+    void onUserLeftChannel(const QString &user, const QString &channel);
     void setInputDevice();
     void setOutputDevice();
     void setInputDeviceWithoutSaving();
@@ -120,4 +137,6 @@ class MainWindow : public QMainWindow {
     void requestUsersDatabase();
     void handleAdminResponse(const QString& request, const QString& jsonData);
     void approveSelectedUser();
+    void onUsersListReceived(const QStringList& onlineUsers, const QStringList& offlineUsers);
+    void onUserStatusChanged(const QString& user, bool online);
 };

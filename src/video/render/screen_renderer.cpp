@@ -238,17 +238,41 @@ void ScreenRenderer::startNextFrame() {
     m_devFuncs->vkCmdBindVertexBuffers(cb, 0, 1, &m_buf, &vbOffset);
 
     VkViewport viewport;
-    viewport.x = viewport.y = 0;
-    viewport.width = sz.width();
-    viewport.height = sz.height();
+    if (m_hasVideoFrame && m_videoWidth > 0 && m_videoHeight > 0) {
+        float videoAspect = static_cast<float>(m_videoWidth) / static_cast<float>(m_videoHeight);
+        float windowAspect = static_cast<float>(sz.width()) / static_cast<float>(sz.height());
+
+        float vpWidth, vpHeight, vpX, vpY;
+        if (windowAspect > videoAspect) {
+            vpHeight = static_cast<float>(sz.height());
+            vpWidth = vpHeight * videoAspect;
+            vpX = (static_cast<float>(sz.width()) - vpWidth) / 2.0f;
+            vpY = 0.0f;
+        } else {
+            vpWidth = static_cast<float>(sz.width());
+            vpHeight = vpWidth / videoAspect;
+            vpX = 0.0f;
+            vpY = (static_cast<float>(sz.height()) - vpHeight) / 2.0f;
+        }
+
+        viewport.x = vpX;
+        viewport.y = vpY;
+        viewport.width = vpWidth;
+        viewport.height = vpHeight;
+    } else {
+        viewport.x = viewport.y = 0;
+        viewport.width = sz.width();
+        viewport.height = sz.height();
+    }
     viewport.minDepth = 0;
     viewport.maxDepth = 1;
     m_devFuncs->vkCmdSetViewport(cb, 0, 1, &viewport);
 
     VkRect2D scissor;
-    scissor.offset.x = scissor.offset.y = 0;
-    scissor.extent.width = viewport.width;
-    scissor.extent.height = viewport.height;
+    scissor.offset.x = static_cast<int32_t>(viewport.x);
+    scissor.offset.y = static_cast<int32_t>(viewport.y);
+    scissor.extent.width = static_cast<uint32_t>(viewport.width);
+    scissor.extent.height = static_cast<uint32_t>(viewport.height);
     m_devFuncs->vkCmdSetScissor(cb, 0, 1, &scissor);
     m_devFuncs->vkCmdDraw(cb, 6, 1, 0, 0);
     m_devFuncs->vkCmdEndRenderPass(cmdBuf);

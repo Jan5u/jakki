@@ -5,5 +5,18 @@
         <file>shaders/screen_vert.spv</file>
         <file>shaders/screen_frag.spv</file>
         <file>shaders/bgra_to_nv12_comp.spv</file>
+        <file>icons/headphone-off.svg</file>
+        <file>icons/headphones.svg</file>
+        <file>icons/list-tree.svg</file>
+        <file>icons/mic-off.svg</file>
+        <file>icons/mic.svg</file>
+        <file>icons/monitor.svg</file>
+        <file>icons/phone-missed.svg</file>
+        <file>icons/radio.svg</file>
+        <file>icons/rat.svg</file>
+        <file>icons/settings.svg</file>
+        <file>icons/shield-user.svg</file>
+        <file>icons/users.svg</file>
+        <file>images/icon.svg</file>
     </qresource>
 </RCC>
