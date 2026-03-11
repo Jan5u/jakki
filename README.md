@@ -48,13 +48,13 @@ sudo dnf in ninja qt6-qtbase-devel openssl-devel opus-devel libdrm-devel pipewir
 Enter nix shell
 
 ```bash
-nix-shell -p ninja qt6.full cmake pkg-config openssl.dev libopus.dev libdrm.dev pipewire.dev libsForQt6.qtkeychain ffmpeg.dev nlohmann_json pipewire zstd.dev
+nix develop
 ```
 
-Run with env variable
+On NixOs Jakki might need to be ran with env variable
 
 ```bash
-XDG_RUNTIME_DIR=/run/user/$(id -u) ./build/jakki
+XDG_RUNTIME_DIR=/run/user/$(id -u) ./jakki
 ```
 
 
