@@ -7,6 +7,7 @@
       "features": [
         "avcodec",
         "avformat",
+        "avfilter",
         "nvcodec",
         "vulkan"
       ]

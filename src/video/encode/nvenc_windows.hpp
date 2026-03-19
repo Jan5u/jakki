@@ -23,9 +23,11 @@ public:
     void flush() override;
     bool isReady() const override;
     std::string getName() const override;
-    bool encodeD3D11Frame(void* d3d11_texture) override;
+    bool encodeD3D11Frame(AVFrame* frame) override;
 
 private:
     Network* net = nullptr;
     EncoderType encoder_type;
+    AVCodecContext* m_ctx = nullptr;
+    bool m_ready = false;
 };
