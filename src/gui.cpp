@@ -100,6 +100,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     });
     connect(sbMonitorBtn, &QToolButton::clicked, this, &MainWindow::showScreenShareDialog);
     connect(sbDisconnectVoiceBtn, &QToolButton::clicked, this, &MainWindow::disconnectVoice);
+    sbMonitorBtn->setEnabled(false);
+    sbDisconnectVoiceBtn->setEnabled(false);
 
     model = new QStandardItemModel(this);
     model->setHorizontalHeaderLabels({"Channels"});
@@ -279,7 +281,10 @@ void MainWindow::showScreenShareDialog() {
     Ui::screenShareDialog uiDialog;
     uiDialog.setupUi(&dialog);
 
-    videoManager.selectScreen();
+    connect(uiDialog.pushButton, &QPushButton::clicked, &dialog, [this]() {
+        videoManager.selectScreen();
+        videoManager.startScreenShareCapture();
+    });
 
     QMap<QString, QString> nvidiaMap = {
         { "H264", "h264_nvenc" },
@@ -345,6 +350,13 @@ void MainWindow::showScreenShareDialog() {
         qDebug() << "Selected encoder type:" << selectedEncoderType;
         qDebug() << "Selected format:" << selectedFormat;
         qDebug() << "Selected codec:" << selectedCodec;
+
+        if (selectedCodec.isEmpty()) {
+            qDebug() << "No codec selected; screen share not started";
+            return;
+        }
+
+        videoManager.startScreenShareEncoding(selectedCodec.toStdString());
     }
 }
 
@@ -399,10 +411,14 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
 void MainWindow::disconnectVoice() {
     if (!networkManager.isInVoiceChannel()) {
         qDebug() << "Not in a voice channel";
+        sbMonitorBtn->setEnabled(false);
+        sbDisconnectVoiceBtn->setEnabled(false);
         return;
     }
     qDebug() << "Disconnecting from voice channel";
     networkManager.leaveVoiceChannel();
+    sbMonitorBtn->setEnabled(false);
+    sbDisconnectVoiceBtn->setEnabled(false);
 }
 
 void MainWindow::disconnect() {
@@ -410,6 +426,9 @@ void MainWindow::disconnect() {
     networkManager.disconnectQUIC();
     if (welcomeConnectButton)
         welcomeConnectButton->setEnabled(true);
+
+    sbMonitorBtn->setEnabled(false);
+    sbDisconnectVoiceBtn->setEnabled(false);
 
     model->clear();
     model->setHorizontalHeaderLabels({"Channels"});
@@ -549,6 +568,8 @@ void MainWindow::onTreeViewItemClicked(const QModelIndex &index) {
     } else {
         qDebug() << "Voice channel selected:" << channelName;
         networkManager.joinVoiceChannel(channelName);
+        sbMonitorBtn->setEnabled(true);
+        sbDisconnectVoiceBtn->setEnabled(true);
     }
 }
 

@@ -23,6 +23,8 @@ class DxgiCapture : public Capture {
     DxgiCapture(Network* network);
     ~DxgiCapture();
     void selectScreen() override;
+    void startCapture() override;
+    void startEncoding(EncoderType encoderType) override;
     std::unique_ptr<D3D11Encoder> encoder;
 
   private:
@@ -30,4 +32,5 @@ class DxgiCapture : public Capture {
     void captureGFX();
     Network* net = nullptr;
     std::jthread m_capture_thread;
+    bool m_screenSelected = false;
 };

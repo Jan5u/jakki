@@ -1,11 +1,11 @@
 #include "capture_linux.hpp"
 
-PipewireCapture::PipewireCapture(Network* network) {
+PipewireCapture::PipewireCapture(Network* network) : m_network(network) {
     std::println("PipewireCapture initialized");
-    encoder = DmaBufEncoder::create(EncoderType::NVENC_H264, network);
-    if (encoder) {
-        encoder->init();
-    }
+}
+
+bool PipewireCapture::isEncoderReady() const {
+    return m_encoderReady.load(std::memory_order_acquire);
 }
 
 PipewireCapture::~PipewireCapture() {
@@ -219,24 +219,71 @@ void PipewireCapture::onSelectSourcesResponse(GDBusConnection *connection, const
         g_variant_unref(results);
         return;
     }
-    std::println("Sources selected, calling Start...");
     g_variant_unref(results);
+
+    self->m_sourcesSelected = true;
+    if (self->m_startRequested) {
+        self->startPortalStream();
+    } else {
+        std::println("Sources selected, start deferred until capture is requested");
+    }
+}
+
+void PipewireCapture::startCapture() {
+    if (m_captureStarted) {
+        return;
+    }
+
+    if (!m_sourcesSelected) {
+        m_startRequested = true;
+        return;
+    }
+
+    startPortalStream();
+}
+
+void PipewireCapture::startEncoding(EncoderType encoderType) {
+    if (m_encoderReady.load(std::memory_order_acquire) || !m_network) {
+        return;
+    }
+
+    auto newEncoder = DmaBufEncoder::create(encoderType, m_network);
+    if (newEncoder) {
+        newEncoder->init();
+    }
+    if (newEncoder && newEncoder->isReady()) {
+        encoder = std::move(newEncoder);
+        m_encoderReady.store(true, std::memory_order_release);
+    }
+}
+
+void PipewireCapture::startPortalStream() {
+    if (m_captureStarted) {
+        return;
+    }
+    if (!m_connection || !m_screencast_proxy || !m_session_handle) {
+        std::println(stderr, "Cannot start capture: session not initialized");
+        return;
+    }
+
+    m_captureStarted = true;
+    m_startRequested = false;
 
     static int request_counter = 0;
     char token[64];
     snprintf(token, sizeof(token), "jakki_start_%d_%ld", ++request_counter, time(nullptr));
-    
+
     char sender_name_clean[256];
-    strncpy(sender_name_clean, g_dbus_connection_get_unique_name(connection) + 1, sizeof(sender_name_clean) - 1);
+    strncpy(sender_name_clean, g_dbus_connection_get_unique_name(m_connection) + 1, sizeof(sender_name_clean) - 1);
     for (char *p = sender_name_clean; *p; p++) {
         if (*p == '.') *p = '_';
     }
-    
+
     char request_path[512];
     snprintf(request_path, sizeof(request_path), "/org/freedesktop/portal/desktop/request/%s/%s", sender_name_clean, token);
 
     g_dbus_connection_signal_subscribe(
-        connection,
+        m_connection,
         "org.freedesktop.portal.Desktop",
         "org.freedesktop.portal.Request",
         "Response",
@@ -244,7 +291,7 @@ void PipewireCapture::onSelectSourcesResponse(GDBusConnection *connection, const
         nullptr,
         G_DBUS_SIGNAL_FLAGS_NO_MATCH_RULE,
         onStartResponse,
-        self,
+        this,
         nullptr
     );
 
@@ -254,9 +301,9 @@ void PipewireCapture::onSelectSourcesResponse(GDBusConnection *connection, const
 
     GError *error = nullptr;
     GVariant *result = g_dbus_proxy_call_sync(
-        self->m_screencast_proxy,
+        m_screencast_proxy,
         "Start",
-        g_variant_new("(osa{sv})", self->m_session_handle, "", &options_builder),
+        g_variant_new("(osa{sv})", m_session_handle, "", &options_builder),
         G_DBUS_CALL_FLAGS_NONE,
         -1,
         nullptr,
@@ -266,6 +313,7 @@ void PipewireCapture::onSelectSourcesResponse(GDBusConnection *connection, const
     if (error) {
         std::println(stderr, "Start failed: {}", error->message);
         g_error_free(error);
+        m_captureStarted = false;
         return;
     }
 
@@ -353,7 +401,7 @@ static void on_process(void *userdata) {
             modifier = DRM_FORMAT_MOD_LINEAR;
         }
 
-        if (self->encoder) {
+        if (self->isEncoderReady() && self->encoder) {
             self->encoder->encodeDmaBufFrame(d->fd, width, height, stride, modifier);
         }
     } else if (d->type == SPA_DATA_MemPtr) {

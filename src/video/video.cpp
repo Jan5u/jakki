@@ -45,6 +45,31 @@ void Video::selectScreen() {
     }
 }
 
+void Video::startScreenShareCapture() {
+    if (!pImpl) {
+        return;
+    }
+    pImpl->startCapture();
+}
+
+void Video::startScreenShareEncoding(const std::string& encoderName) {
+    if (!pImpl) {
+        return;
+    }
+    if (encoderName.empty()) {
+        std::println(stderr, "No encoder selected for screen share");
+        return;
+    }
+
+    try {
+        EncoderType encoderType = Encoder::nameToEncoderType(encoderName);
+        pImpl->startEncoding(encoderType);
+    } catch (const std::exception& ex) {
+        std::println(stderr, "Unsupported encoder selected: {}", encoderName);
+        std::println(stderr, "Details: {}", ex.what());
+    }
+}
+
 void Video::startDecodeThread() {
     if (m_vulkanWindow) {
         m_renderer = m_vulkanWindow->getRenderer();

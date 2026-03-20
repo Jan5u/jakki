@@ -10,12 +10,24 @@ DxgiCapture::~DxgiCapture() {
 }
 
 void DxgiCapture::selectScreen() {
+    m_screenSelected = true;
+}
+
+void DxgiCapture::startCapture() {
+    m_screenSelected = true;
+}
+
+void DxgiCapture::startEncoding(EncoderType encoderType) {
     if (m_capture_thread.joinable()) {
         std::println("DxgiCapture already running");
         return;
     }
 
-    encoder = D3D11Encoder::create(EncoderType::NVENC_HEVC, net);
+    if (!m_screenSelected) {
+        m_screenSelected = true;
+    }
+
+    encoder = D3D11Encoder::create(encoderType, net);
     if (encoder) {
         encoder->init();
     }

@@ -51,6 +51,8 @@ class Video {
     VulkanWindow *createVulkanWindow();
     QWidget *createVulkanTab(QWidget *parent);
     void selectScreen();
+    void startScreenShareCapture();
+    void startScreenShareEncoding(const std::string& encoderName);
     void startDecodeThread();
     void setRenderer(ScreenRenderer *renderer);
     void receiveEncodedPacket(const std::vector<uint8_t>& packet);
