@@ -70,6 +70,13 @@ void Video::startScreenShareEncoding(const std::string& encoderName) {
     }
 }
 
+void Video::stopScreenShareCapture() {
+    if (!pImpl) {
+        return;
+    }
+    pImpl->stopCapture();
+}
+
 void Video::startDecodeThread() {
     if (m_vulkanWindow) {
         m_renderer = m_vulkanWindow->getRenderer();

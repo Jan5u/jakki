@@ -36,6 +36,7 @@ public:
     void selectScreen() override;
     void startCapture() override;
     void startEncoding(EncoderType encoderType) override;
+    void stopCapture() override;
     bool isEncoderReady() const;
     PipewireData pwdata;
     std::unique_ptr<DmaBufEncoder> encoder;
@@ -54,6 +55,7 @@ private:
     void createPipewireNode();
     void openPipewireRemote();
     void startPortalStream();
+    void stopPortalSession();
     std::jthread m_pipewire_thread;
 
     Network* m_network = nullptr;

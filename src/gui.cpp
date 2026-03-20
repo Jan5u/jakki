@@ -286,6 +286,10 @@ void MainWindow::showScreenShareDialog() {
         videoManager.startScreenShareCapture();
     });
 
+    connect(&dialog, &QDialog::rejected, this, [this]() {
+        videoManager.stopScreenShareCapture();
+    });
+
     QMap<QString, QString> nvidiaMap = {
         { "H264", "h264_nvenc" },
         { "H265", "hevc_nvenc" },
@@ -353,6 +357,7 @@ void MainWindow::showScreenShareDialog() {
 
         if (selectedCodec.isEmpty()) {
             qDebug() << "No codec selected; screen share not started";
+            videoManager.stopScreenShareCapture();
             return;
         }
 

@@ -8,4 +8,5 @@ public:
     virtual void selectScreen() = 0;
     virtual void startCapture() = 0;
     virtual void startEncoding(EncoderType encoderType) = 0;
+    virtual void stopCapture() = 0;
 };

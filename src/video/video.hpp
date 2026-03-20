@@ -53,6 +53,7 @@ class Video {
     void selectScreen();
     void startScreenShareCapture();
     void startScreenShareEncoding(const std::string& encoderName);
+    void stopScreenShareCapture();
     void startDecodeThread();
     void setRenderer(ScreenRenderer *renderer);
     void receiveEncodedPacket(const std::vector<uint8_t>& packet);

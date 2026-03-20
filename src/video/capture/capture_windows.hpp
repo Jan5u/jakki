@@ -25,6 +25,7 @@ class DxgiCapture : public Capture {
     void selectScreen() override;
     void startCapture() override;
     void startEncoding(EncoderType encoderType) override;
+    void stopCapture() override;
     std::unique_ptr<D3D11Encoder> encoder;
 
   private:

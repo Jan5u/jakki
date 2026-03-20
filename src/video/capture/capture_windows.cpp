@@ -38,6 +38,14 @@ void DxgiCapture::startEncoding(EncoderType encoderType) {
     });
 }
 
+void DxgiCapture::stopCapture() {
+    if (m_capture_thread.joinable()) {
+        m_capture_thread.request_stop();
+        m_capture_thread.join();
+    }
+    m_screenSelected = false;
+}
+
 /**
  * Capture via Desktop Duplication API
  *

@@ -9,6 +9,7 @@ bool PipewireCapture::isEncoderReady() const {
 }
 
 PipewireCapture::~PipewireCapture() {
+    stopCapture();
     if (m_session_handle) {
         g_free(m_session_handle);
     }
@@ -255,6 +256,62 @@ void PipewireCapture::startEncoding(EncoderType encoderType) {
         encoder = std::move(newEncoder);
         m_encoderReady.store(true, std::memory_order_release);
     }
+}
+
+void PipewireCapture::stopPortalSession() {
+    if (!m_connection || !m_session_handle) {
+        return;
+    }
+
+    GError *error = nullptr;
+    g_dbus_connection_call_sync(
+        m_connection,
+        "org.freedesktop.portal.Desktop",
+        m_session_handle,
+        "org.freedesktop.portal.Session",
+        "Close",
+        nullptr,
+        nullptr,
+        G_DBUS_CALL_FLAGS_NONE,
+        -1,
+        nullptr,
+        &error
+    );
+
+    if (error) {
+        std::println(stderr, "Failed to close portal session: {}", error->message);
+        g_error_free(error);
+    } else {
+        std::println("Portal session closed");
+    }
+}
+
+void PipewireCapture::stopCapture() {
+    m_startRequested = false;
+    m_sourcesSelected = false;
+    m_captureStarted = false;
+
+    if (pwdata.loop) {
+        pw_main_loop_quit(pwdata.loop);
+    }
+
+    if (m_pipewire_thread.joinable()) {
+        m_pipewire_thread.request_stop();
+        m_pipewire_thread.join();
+    }
+
+    stopPortalSession();
+
+    if (m_session_handle) {
+        g_free(m_session_handle);
+        m_session_handle = nullptr;
+    }
+    if (m_pipewire_fd >= 0) {
+        close(m_pipewire_fd);
+        m_pipewire_fd = -1;
+    }
+
+    m_encoderReady.store(false, std::memory_order_release);
 }
 
 void PipewireCapture::startPortalStream() {
@@ -551,5 +608,15 @@ void PipewireCapture::createPipewireNode() {
     pw_main_loop_run(pwdata.loop);
 
     pw_stream_destroy(pwdata.stream);
+    pwdata.stream = nullptr;
+    if (m_pw_core) {
+        pw_core_disconnect(m_pw_core);
+        m_pw_core = nullptr;
+    }
+    if (m_pw_context) {
+        pw_context_destroy(m_pw_context);
+        m_pw_context = nullptr;
+    }
     pw_main_loop_destroy(pwdata.loop);
+    pwdata.loop = nullptr;
 }
