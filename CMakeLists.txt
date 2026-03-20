@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Svg)
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(PkgConfig REQUIRED)
@@ -114,7 +114,7 @@ compile_shader(jakki ui/shaders/screen.vert)
 compile_shader(jakki ui/shaders/screen.frag)
 compile_shader(jakki ui/shaders/bgra_to_nv12.comp)
 
-target_link_libraries(jakki PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6Keychain::Qt6Keychain OpenSSL::SSL OpenSSL::Crypto nlohmann_json::nlohmann_json Threads::Threads)
+target_link_libraries(jakki PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Svg Qt6Keychain::Qt6Keychain OpenSSL::SSL OpenSSL::Crypto nlohmann_json::nlohmann_json Threads::Threads)
 
 if(WIN32)
     set_target_properties(jakki PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)

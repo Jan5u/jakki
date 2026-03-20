@@ -1,4 +1,5 @@
 {
+  "builtin-baseline": "62159a45e18f3a9ac0548628dcaf74fcb60c6ff9",
   "dependencies": [
     {
       "name": "ffmpeg",
@@ -24,7 +25,7 @@
     },
     "qtkeychain-qt6",
     "shaderc",
-    "zstd"
-  ],
-  "builtin-baseline": "66c0373dc7fca549e5803087b9487edfe3aca0a1"
+    "zstd",
+    "qtsvg"
+  ]
 }
