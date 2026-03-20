@@ -63,6 +63,12 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(&audioManager, &Audio::defaultDeviceChanged, this, &MainWindow::onDefaultDeviceChanged);
     connect(&audioManager, &Audio::volumeChanged, this, &MainWindow::onVolumeChanged);
     connect(ui->actionShare_Screen, &QAction::triggered, this, &MainWindow::showScreenShareDialog);
+    connect(ui->actionStop_Screen_Share, &QAction::triggered, this, [this]() {
+        videoManager.stopScreenShareCapture();
+        isScreenShareActive = false;
+        ui->actionStop_Screen_Share->setEnabled(false);
+    });
+    connect(ui->actionDisconnect_2, &QAction::triggered, this, &MainWindow::disconnectVoice);
 
     auto whiteIcon = [](const QString &iconPath) {
         QPixmap pixmap(iconPath);
@@ -284,10 +290,14 @@ void MainWindow::showScreenShareDialog() {
     connect(uiDialog.pushButton, &QPushButton::clicked, &dialog, [this]() {
         videoManager.selectScreen();
         videoManager.startScreenShareCapture();
+        isScreenShareActive = true;
+        ui->actionStop_Screen_Share->setEnabled(true);
     });
 
     connect(&dialog, &QDialog::rejected, this, [this]() {
         videoManager.stopScreenShareCapture();
+        isScreenShareActive = false;
+        ui->actionStop_Screen_Share->setEnabled(false);
     });
 
     QMap<QString, QString> nvidiaMap = {
@@ -358,6 +368,8 @@ void MainWindow::showScreenShareDialog() {
         if (selectedCodec.isEmpty()) {
             qDebug() << "No codec selected; screen share not started";
             videoManager.stopScreenShareCapture();
+            isScreenShareActive = false;
+            ui->actionStop_Screen_Share->setEnabled(false);
             return;
         }
 
@@ -418,12 +430,20 @@ void MainWindow::disconnectVoice() {
         qDebug() << "Not in a voice channel";
         sbMonitorBtn->setEnabled(false);
         sbDisconnectVoiceBtn->setEnabled(false);
+        isScreenShareActive = false;
+        ui->actionShare_Screen->setEnabled(false);
+        ui->actionStop_Screen_Share->setEnabled(false);
+        ui->actionDisconnect_2->setEnabled(false);
         return;
     }
     qDebug() << "Disconnecting from voice channel";
     networkManager.leaveVoiceChannel();
     sbMonitorBtn->setEnabled(false);
     sbDisconnectVoiceBtn->setEnabled(false);
+    isScreenShareActive = false;
+    ui->actionShare_Screen->setEnabled(false);
+    ui->actionStop_Screen_Share->setEnabled(false);
+    ui->actionDisconnect_2->setEnabled(false);
 }
 
 void MainWindow::disconnect() {
@@ -434,6 +454,10 @@ void MainWindow::disconnect() {
 
     sbMonitorBtn->setEnabled(false);
     sbDisconnectVoiceBtn->setEnabled(false);
+    isScreenShareActive = false;
+    ui->actionShare_Screen->setEnabled(false);
+    ui->actionStop_Screen_Share->setEnabled(false);
+    ui->actionDisconnect_2->setEnabled(false);
 
     model->clear();
     model->setHorizontalHeaderLabels({"Channels"});
@@ -575,6 +599,9 @@ void MainWindow::onTreeViewItemClicked(const QModelIndex &index) {
         networkManager.joinVoiceChannel(channelName);
         sbMonitorBtn->setEnabled(true);
         sbDisconnectVoiceBtn->setEnabled(true);
+        ui->actionShare_Screen->setEnabled(true);
+        ui->actionStop_Screen_Share->setEnabled(isScreenShareActive);
+        ui->actionDisconnect_2->setEnabled(true);
     }
 }
 

@@ -88,6 +88,7 @@ class MainWindow : public QMainWindow {
     QToolButton *sbMonitorBtn;
     QToolButton *sbDisconnectVoiceBtn;
     QToolButton *sbUsersBtn;
+    bool isScreenShareActive = false;
     bool isInitialDeviceSetup = true;
     QString currentInputDeviceId;
     QString currentOutputDeviceId;

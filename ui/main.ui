@@ -171,6 +171,9 @@
    </property>
   </action>
   <action name="actionShare_Screen">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
    <property name="text">
     <string>Share Screen</string>
    </property>
@@ -184,11 +187,17 @@
    </property>
   </action>
   <action name="actionStop_Screen_Share">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
    <property name="text">
     <string>Stop Screenshare</string>
    </property>
   </action>
   <action name="actionDisconnect_2">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
    <property name="text">
     <string>Disconnect</string>
    </property>
