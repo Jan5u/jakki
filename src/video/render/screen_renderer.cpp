@@ -1247,9 +1247,20 @@ void ScreenRenderer::cleanupCudaInterop() {
 }
 
 void ScreenRenderer::requestFrameUpdate() {
-    if (m_window) {
-        m_window->requestUpdate();
+    if (!m_window) {
+        return;
     }
+
+    if (QThread::currentThread() == m_window->thread()) {
+        m_window->requestUpdate();
+        return;
+    }
+
+    QMetaObject::invokeMethod(m_window, [this]() {
+        if (m_window) {
+            m_window->requestUpdate();
+        }
+    }, Qt::QueuedConnection);
 }
 
 void ScreenRenderer::transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout) {

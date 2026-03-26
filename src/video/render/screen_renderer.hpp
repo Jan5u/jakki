@@ -3,6 +3,8 @@
 #include <QFile>
 #include <QVulkanFunctions>
 #include <QVulkanWindow>
+#include <QMetaObject>
+#include <QThread>
 
 #include <mutex>
 #include <print>
