@@ -4,8 +4,6 @@ static float vertexData[] = {
     -1.0f, -1.0f,  0.0f, 0.0f,
      1.0f, -1.0f,  1.0f, 0.0f,
     -1.0f,  1.0f,  0.0f, 1.0f,
-    -1.0f,  1.0f,  0.0f, 1.0f,
-     1.0f, -1.0f,  1.0f, 0.0f,
      1.0f,  1.0f,  1.0f, 1.0f
 };
 
@@ -274,7 +272,7 @@ void ScreenRenderer::startNextFrame() {
     scissor.extent.width = static_cast<uint32_t>(viewport.width);
     scissor.extent.height = static_cast<uint32_t>(viewport.height);
     m_devFuncs->vkCmdSetScissor(cb, 0, 1, &scissor);
-    m_devFuncs->vkCmdDraw(cb, 6, 1, 0, 0);
+    m_devFuncs->vkCmdDraw(cb, 4, 1, 0, 0);
     m_devFuncs->vkCmdEndRenderPass(cmdBuf);
 
     m_window->frameReady();
@@ -931,7 +929,7 @@ void ScreenRenderer::createImageDescriptorSet() {
     VkPipelineInputAssemblyStateCreateInfo ia;
     memset(&ia, 0, sizeof(ia));
     ia.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
     pipelineInfo.pInputAssemblyState = &ia;
     
     VkPipelineViewportStateCreateInfo vp;
