@@ -206,6 +206,23 @@ std::vector<std::string> Config::getSupportedVulkanEncoders() const {
     return split(keyIt->second);
 }
 
+std::string Config::getPreferredDecoder() const {
+    auto sectionIt = data.find("Decoder");
+    if (sectionIt == data.end()) {
+        return "auto";
+    }
+    auto keyIt = sectionIt->second.find("Preferred");
+    if (keyIt == sectionIt->second.end()) {
+        return "auto";
+    }
+    return keyIt->second;
+}
+
+void Config::setPreferredDecoder(const std::string &decoder) {
+    data["Decoder"]["Preferred"] = decoder;
+    save();
+}
+
 void Config::createDefaultConfig() {
     std::ofstream file(configPath);
     if (!file.is_open()) {
@@ -219,6 +236,9 @@ void Config::createDefaultConfig() {
     file << "\n";
     file << "[Appearance]\n";
     file << "Theme=Default\n";
+    file << "\n";
+    file << "[Decoder]\n";
+    file << "Preferred=auto\n";
     file << "\n";
 
     file.close();

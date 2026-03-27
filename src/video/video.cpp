@@ -10,7 +10,7 @@
 #endif
 
 Video::Video(Config& config, Network &network) : m_network(network) {
-    m_decoder = std::make_unique<Decoder>();
+    m_decoder = std::make_unique<Decoder>(config.getPreferredDecoder());
 #ifdef _WIN32
     pImpl = std::make_unique<DxgiCapture>(&network);
     std::println("Created DXGI video implementation");

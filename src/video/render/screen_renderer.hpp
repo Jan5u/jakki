@@ -21,6 +21,7 @@ extern "C" {
 #include <libavutil/frame.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext_cuda.h>
+#include <libavutil/hwcontext_vulkan.h>
 #include <libavutil/pixdesc.h>
 }
 
@@ -77,6 +78,7 @@ class ScreenRenderer : public QVulkanWindowRenderer {
     void releaseVideoImage();
     void createImageDescriptorSet();
     void transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout);
+    bool ensureVideoResources(uint32_t width, uint32_t height);
     bool ensureCudaLoader();
     bool ensureCudaInterop(AVFrame *frame, VkDevice dev, CUcontext cuCtx);
     void cleanupCudaInterop();
@@ -87,4 +89,6 @@ class ScreenRenderer : public QVulkanWindowRenderer {
     VkBuffer m_cudaStagingBuffer = VK_NULL_HANDLE;
     VkDeviceMemory m_cudaStagingMemory = VK_NULL_HANDLE;
     VkDeviceSize m_cudaStagingSize = 0;
+    bool m_videoImageOwned = true;
+    VkFormat m_videoFormat = VK_FORMAT_UNDEFINED;
 };
