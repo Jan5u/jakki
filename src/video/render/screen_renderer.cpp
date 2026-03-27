@@ -174,6 +174,8 @@ void ScreenRenderer::releaseResources() {
         m_bufMem = VK_NULL_HANDLE;
     }
 
+    unlockVulkanFrameIfNeeded();
+
     cleanupCudaInterop();
     
     releaseVideoImage();
@@ -182,6 +184,21 @@ void ScreenRenderer::releaseResources() {
         av_frame_free(&m_currentVideoFrame);
         m_currentVideoFrame = nullptr;
     }
+}
+
+void ScreenRenderer::unlockVulkanFrameIfNeeded() {
+    if (!m_hasLockedVulkanFrame || !m_lockedVkFramesCtx || !m_lockedFramesCtx || !m_lockedVkFrame) {
+        return;
+    }
+
+    if (m_lockedVkFramesCtx->unlock_frame) {
+        m_lockedVkFramesCtx->unlock_frame(m_lockedFramesCtx, m_lockedVkFrame);
+    }
+
+    m_lockedFramesCtx = nullptr;
+    m_lockedVkFramesCtx = nullptr;
+    m_lockedVkFrame = nullptr;
+    m_hasLockedVulkanFrame = false;
 }
 
 void ScreenRenderer::startNextFrame() {
@@ -221,6 +238,7 @@ void ScreenRenderer::startNextFrame() {
     
     if (m_pipeline == VK_NULL_HANDLE) {
         m_devFuncs->vkCmdEndRenderPass(cmdBuf);
+        unlockVulkanFrameIfNeeded();
         m_window->frameReady();
         return;
     }
@@ -274,6 +292,8 @@ void ScreenRenderer::startNextFrame() {
     m_devFuncs->vkCmdSetScissor(cb, 0, 1, &scissor);
     m_devFuncs->vkCmdDraw(cb, 4, 1, 0, 0);
     m_devFuncs->vkCmdEndRenderPass(cmdBuf);
+
+    unlockVulkanFrameIfNeeded();
 
     m_window->frameReady();
 }
@@ -802,8 +822,26 @@ void ScreenRenderer::updateVideoImage(AVFrame *frame) {
         return;
     }
 
+    unlockVulkanFrameIfNeeded();
+
     if (vkFramesCtx->lock_frame) {
         vkFramesCtx->lock_frame(framesCtx, vkFrame);
+    }
+    m_lockedFramesCtx = framesCtx;
+    m_lockedVkFramesCtx = vkFramesCtx;
+    m_lockedVkFrame = vkFrame;
+    m_hasLockedVulkanFrame = true;
+
+    if (vkFrame->sem[0] != VK_NULL_HANDLE && vkFrame->sem_value[0] > 0) {
+        VkSemaphoreWaitInfo waitInfo = {};
+        waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+        waitInfo.semaphoreCount = 1;
+        waitInfo.pSemaphores = &vkFrame->sem[0];
+        waitInfo.pValues = &vkFrame->sem_value[0];
+        VkResult waitRes = m_devFuncs->vkWaitSemaphores(dev, &waitInfo, 10 * 1000 * 1000);
+        if (waitRes == VK_TIMEOUT) {
+            std::println("Timed out waiting on Vulkan decode semaphore; using frame anyway");
+        }
     }
 
     VkImage image = vkFrame->img[0];
@@ -891,10 +929,6 @@ void ScreenRenderer::updateVideoImage(AVFrame *frame) {
                 }
             }
         }
-    }
-
-    if (vkFramesCtx->unlock_frame) {
-        vkFramesCtx->unlock_frame(framesCtx, vkFrame);
     }
 
     std::println("Using Vulkan zero-copy frame {}x{}", m_videoWidth, m_videoHeight);

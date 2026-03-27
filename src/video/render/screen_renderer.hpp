@@ -78,6 +78,7 @@ class ScreenRenderer : public QVulkanWindowRenderer {
     void releaseVideoImage();
     void createImageDescriptorSet();
     void transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout);
+    void unlockVulkanFrameIfNeeded();
     bool ensureVideoResources(uint32_t width, uint32_t height);
     bool ensureCudaLoader();
     bool ensureCudaInterop(AVFrame *frame, VkDevice dev, CUcontext cuCtx);
@@ -91,4 +92,8 @@ class ScreenRenderer : public QVulkanWindowRenderer {
     VkDeviceSize m_cudaStagingSize = 0;
     bool m_videoImageOwned = true;
     VkFormat m_videoFormat = VK_FORMAT_UNDEFINED;
+    AVHWFramesContext *m_lockedFramesCtx = nullptr;
+    AVVulkanFramesContext *m_lockedVkFramesCtx = nullptr;
+    AVVkFrame *m_lockedVkFrame = nullptr;
+    bool m_hasLockedVulkanFrame = false;
 };
