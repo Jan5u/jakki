@@ -6,10 +6,12 @@
       "default-features": false,
       "features": [
         "avcodec",
-        "avformat",
         "avfilter",
+        "avformat",
         "nvcodec",
-        "vulkan"
+        "vulkan",
+        "amf",
+        "qsv"
       ]
     },
     "nlohmann-json",
@@ -25,8 +27,8 @@
       ]
     },
     "qtkeychain-qt6",
+    "qtsvg",
     "shaderc",
-    "zstd",
-    "qtsvg"
+    "zstd"
   ]
 }
