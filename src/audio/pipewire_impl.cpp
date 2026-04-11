@@ -397,6 +397,11 @@ void PipewireImpl::on_process_record(void *userdata) {
 
     // Copy audio data
     std::vector<float> audioData(samples, samples + n_samples);
+
+    if (!audio->isAboveVoiceGate(audioData.data(), audioData.size())) {
+        pw_stream_queue_buffer(data->capture_stream, b);
+        return;
+    }
     
     // Encode and send packet
     audio->encodePacketWithOpusFloat(audioData.data(), audioData.size());

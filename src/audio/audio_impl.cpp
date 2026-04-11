@@ -2,6 +2,44 @@
 #include "../network.hpp"
 #include <iostream>
 #include <cstring>
+#include <cmath>
+#include <algorithm>
+
+// --- Voice gate ---
+
+float AudioImpl::calculateRmsDb(const float* samples, size_t numSamples) {
+    if (!samples || numSamples == 0) return -100.0f;
+
+    double sum = 0.0;
+    for (size_t i = 0; i < numSamples; ++i) {
+        sum += static_cast<double>(samples[i]) * samples[i];
+    }
+    double rms = std::sqrt(sum / numSamples);
+    if (rms < 1e-10) return -100.0f;
+    return static_cast<float>(20.0 * std::log10(rms));
+}
+
+bool AudioImpl::isAboveVoiceGate(const float* samples, size_t numSamples) const {
+    if (!voiceGateEnabled.load(std::memory_order_relaxed)) return true;
+    float db = calculateRmsDb(samples, numSamples);
+    return db >= voiceGateThresholdDb.load(std::memory_order_relaxed);
+}
+
+void AudioImpl::setVoiceGateThreshold(float thresholdDb) {
+    voiceGateThresholdDb.store(std::clamp(thresholdDb, -60.0f, 0.0f), std::memory_order_relaxed);
+}
+
+float AudioImpl::getVoiceGateThreshold() const {
+    return voiceGateThresholdDb.load(std::memory_order_relaxed);
+}
+
+void AudioImpl::setVoiceGateEnabled(bool enabled) {
+    voiceGateEnabled.store(enabled, std::memory_order_relaxed);
+}
+
+bool AudioImpl::isVoiceGateEnabled() const {
+    return voiceGateEnabled.load(std::memory_order_relaxed);
+}
 
 void AudioImpl::initOpus() {
     std::cout << "Initializing Opus encoder\n";

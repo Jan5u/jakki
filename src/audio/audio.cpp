@@ -79,3 +79,19 @@ void Audio::setVolume(bool isInput, float volume) {
 float Audio::getVolume(bool isInput) const {
     return pImpl->getVolume(isInput);
 }
+
+void Audio::setVoiceGateThreshold(float thresholdDb) {
+    pImpl->setVoiceGateThreshold(thresholdDb);
+}
+
+float Audio::getVoiceGateThreshold() const {
+    return pImpl->getVoiceGateThreshold();
+}
+
+void Audio::setVoiceGateEnabled(bool enabled) {
+    pImpl->setVoiceGateEnabled(enabled);
+}
+
+bool Audio::isVoiceGateEnabled() const {
+    return pImpl->isVoiceGateEnabled();
+}

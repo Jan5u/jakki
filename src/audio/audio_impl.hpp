@@ -8,6 +8,8 @@
 #include <unordered_map>
 #include <mutex>
 #include <functional>
+#include <atomic>
+#include <cmath>
 
 #define DEFAULT_RATE 48000
 #define DEFAULT_CHANNELS 2
@@ -54,6 +56,12 @@ public:
     // Volume control - must be implemented by platform-specific classes
     virtual void setVolume(bool isInput, float volume) = 0;
     virtual float getVolume(bool isInput) const = 0;
+
+    // Voice gate control
+    void setVoiceGateThreshold(float thresholdDb);
+    float getVoiceGateThreshold() const;
+    void setVoiceGateEnabled(bool enabled);
+    bool isVoiceGateEnabled() const;
 
     // Set callback for device list changes
     void setDeviceChangeCallback(std::function<void()> callback) {
@@ -105,8 +113,14 @@ protected:
     std::vector<float> decodeOpusPacketFloat(const std::string& userId, const std::vector<uint8_t>& payload);
     std::vector<float> mixUserAudioBuffersFloat(int n_frames);
 
+    // Voice gate helpers
+    static float calculateRmsDb(const float* samples, size_t numSamples);
+    bool isAboveVoiceGate(const float* samples, size_t numSamples) const;
+
     // Common data members
     Network& networkManager;
+    std::atomic<float> voiceGateThresholdDb{-40.0f};
+    std::atomic<bool> voiceGateEnabled{true};
     std::unordered_map<std::string, UserStream> userStreams; // per-user decoder + queued frames
     std::mutex bufferMutex;
     static const size_t MAX_BUFFER_SIZE = 5; // Max 5 packets per user
