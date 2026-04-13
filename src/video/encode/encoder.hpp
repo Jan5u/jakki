@@ -31,6 +31,9 @@ enum class EncoderType {
     NVENC_H264,
     NVENC_HEVC,
     NVENC_AV1,
+    AMF_H264,
+    AMF_HEVC,
+    AMF_AV1,
 };
 
 class Encoder {
@@ -44,6 +47,7 @@ public:
     static EncoderType nameToEncoderType(const std::string& name);
     static std::vector<EncoderType> getAvailableEncoders();
     static std::vector<std::string> getSupportedNVIDIAEncoders();
+    static std::vector<std::string> getSupportedAMDEncoders();
     static std::vector<std::string> getSupportedVulkanEncoders();
     static std::vector<std::string> getSupportedEncoders();
 };

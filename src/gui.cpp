@@ -306,6 +306,12 @@ void MainWindow::showScreenShareDialog() {
         { "AV1",  "av1_nvenc" }
     };
 
+    QMap<QString, QString> amdMap = {
+        { "H264", "h264_amf" },
+        { "H265", "hevc_amf" },
+        { "AV1",  "av1_amf" }
+    };
+
     QMap<QString, QString> vulkanMap = {
         { "H264", "h264_vulkan" },
         { "H265", "hevc_vulkan" },
@@ -315,10 +321,14 @@ void MainWindow::showScreenShareDialog() {
     uiDialog.encodersComboBox->clear();
     
     bool hasNVIDIA = !videoManager.supportedNVIDIAEncoders.empty();
+    bool hasAMD = !videoManager.supportedAMDEncoders.empty();
     bool hasVulkan = !videoManager.supportedVulkanEncoders.empty();
     
     if (hasNVIDIA) {
         uiDialog.encodersComboBox->addItem("NVIDIA", "nvidia");
+    }
+    if (hasAMD) {
+        uiDialog.encodersComboBox->addItem("AMD", "amd");
     }
     if (hasVulkan) {
         uiDialog.encodersComboBox->addItem("Vulkan", "vulkan");
@@ -328,19 +338,29 @@ void MainWindow::showScreenShareDialog() {
         uiDialog.formatsComboBox->clear();
         
         QString selectedEncoderType = uiDialog.encodersComboBox->currentData().toString();
-        const auto& supportedEncoders = (selectedEncoderType == "nvidia") 
-            ? videoManager.supportedNVIDIAEncoders 
-            : videoManager.supportedVulkanEncoders;
+        const std::vector<std::string>* supportedEncoders = nullptr;
+        const QMap<QString, QString>* encoderMap = nullptr;
+
+        if (selectedEncoderType == "nvidia") {
+            supportedEncoders = &videoManager.supportedNVIDIAEncoders;
+            encoderMap = &nvidiaMap;
+        } else if (selectedEncoderType == "amd") {
+            supportedEncoders = &videoManager.supportedAMDEncoders;
+            encoderMap = &amdMap;
+        } else if (selectedEncoderType == "vulkan") {
+            supportedEncoders = &videoManager.supportedVulkanEncoders;
+            encoderMap = &vulkanMap;
+        } else {
+            return;
+        }
         
-        const auto& encoderMap = (selectedEncoderType == "nvidia") ? nvidiaMap : vulkanMap;
-        
-        for (auto it = encoderMap.constBegin(); it != encoderMap.constEnd(); ++it) {
+        for (auto it = encoderMap->constBegin(); it != encoderMap->constEnd(); ++it) {
             const QString& format = it.key();
             const QString& codecName = it.value();
             
             bool isSupported = std::any_of(
-                supportedEncoders.begin(), 
-                supportedEncoders.end(),
+                supportedEncoders->begin(),
+                supportedEncoders->end(),
                 [&codecName](const std::string& encoder) {
                     return QString::fromStdString(encoder) == codecName;
                 }

@@ -53,21 +53,86 @@ void DxgiCapture::stopCapture() {
  *
  */
 void DxgiCapture::captureDDA() {
-    AVBufferRef *hw_device_ctx = NULL;
-    av_hwdevice_ctx_create(&hw_device_ctx, AV_HWDEVICE_TYPE_D3D11VA, NULL, NULL, 0);
-    AVFilterGraph *filter_graph = avfilter_graph_alloc();
-    const AVFilter *src = avfilter_get_by_name("ddagrab");
-    const AVFilter *sink = avfilter_get_by_name("buffersink");
-    AVFilterContext *buffersrc_ctx = NULL;
-    AVFilterContext *buffersink_ctx = NULL;
+    AVBufferRef* hw_device_ctx = nullptr;
+    av_hwdevice_ctx_create(&hw_device_ctx, AV_HWDEVICE_TYPE_D3D11VA, nullptr, nullptr, 0);
 
-    filter_graph = avfilter_graph_alloc();
+    AVFilterGraph* filter_graph = avfilter_graph_alloc();
+    const AVFilter* src = avfilter_get_by_name("ddagrab");
+    const AVFilter* sink = avfilter_get_by_name("buffersink");
+    AVFilterContext* buffersrc_ctx = nullptr;
+    AVFilterContext* buffersink_ctx = nullptr;
+    AVFilterContext* scale_ctx = nullptr;
+
+    const bool useAmfPath = encoder && encoder->getName().find("_amf") != std::string::npos;
+
+    if (!filter_graph || !src || !sink) {
+        std::println(stderr, "Failed to initialize Windows capture filter graph");
+        if (filter_graph) {
+            avfilter_graph_free(&filter_graph);
+        }
+        if (hw_device_ctx) {
+            av_buffer_unref(&hw_device_ctx);
+        }
+        return;
+    }
+
     char args[256];
     snprintf(args, sizeof(args), "output_idx=0:framerate=60");
-    avfilter_graph_create_filter(&buffersrc_ctx, src, "in", args, NULL, filter_graph);
-    avfilter_graph_create_filter(&buffersink_ctx, sink, "out", NULL, NULL, filter_graph);
-    avfilter_link(buffersrc_ctx, 0, buffersink_ctx, 0);
-    avfilter_graph_config(filter_graph, NULL);
+    if (avfilter_graph_create_filter(&buffersrc_ctx, src, "in", args, nullptr, filter_graph) < 0) {
+        std::println(stderr, "Failed to create ddagrab filter");
+        avfilter_graph_free(&filter_graph);
+        if (hw_device_ctx) {
+            av_buffer_unref(&hw_device_ctx);
+        }
+        return;
+    }
+
+    if (avfilter_graph_create_filter(&buffersink_ctx, sink, "out", nullptr, nullptr, filter_graph) < 0) {
+        std::println(stderr, "Failed to create buffersink filter");
+        avfilter_graph_free(&filter_graph);
+        if (hw_device_ctx) {
+            av_buffer_unref(&hw_device_ctx);
+        }
+        return;
+    }
+
+    int linkRet = 0;
+    if (useAmfPath) {
+        const AVFilter* scale = avfilter_get_by_name("scale_d3d11");
+        if (scale && avfilter_graph_create_filter(&scale_ctx, scale, "scale_amf_nv12", "format=nv12", nullptr, filter_graph) >= 0) {
+            const int linkSrcToScale = avfilter_link(buffersrc_ctx, 0, scale_ctx, 0);
+            const int linkScaleToSink = (linkSrcToScale >= 0) ? avfilter_link(scale_ctx, 0, buffersink_ctx, 0) : linkSrcToScale;
+            if (linkSrcToScale >= 0 && linkScaleToSink >= 0) {
+                std::println("Using AMF GPU path: ddagrab -> scale_d3d11(format=nv12) -> buffersink");
+            } else {
+                std::println(stderr, "Failed to link AMF d3d11 scaling path");
+                linkRet = -1;
+            }
+        } else {
+            std::println(stderr, "scale_d3d11 not available, AMF will use direct ddagrab frames");
+            linkRet = avfilter_link(buffersrc_ctx, 0, buffersink_ctx, 0);
+        }
+    } else {
+        linkRet = avfilter_link(buffersrc_ctx, 0, buffersink_ctx, 0);
+    }
+
+    if (linkRet < 0) {
+        std::println(stderr, "Failed to link capture filter graph");
+        avfilter_graph_free(&filter_graph);
+        if (hw_device_ctx) {
+            av_buffer_unref(&hw_device_ctx);
+        }
+        return;
+    }
+
+    if (avfilter_graph_config(filter_graph, nullptr) < 0) {
+        std::println(stderr, "Failed to configure capture filter graph");
+        avfilter_graph_free(&filter_graph);
+        if (hw_device_ctx) {
+            av_buffer_unref(&hw_device_ctx);
+        }
+        return;
+    }
 
     AVFrame *frame = av_frame_alloc();
     while (true) {

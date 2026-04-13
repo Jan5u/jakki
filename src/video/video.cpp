@@ -19,15 +19,21 @@ Video::Video(Config& config, Network &network) : m_network(network) {
     std::println("Created PipeWire video implementation");
 #endif
     supportedNVIDIAEncoders = config.getSupportedNVIDIAEncoders();
+    supportedAMDEncoders = config.getSupportedAMDEncoders();
     supportedVulkanEncoders = config.getSupportedVulkanEncoders();
 
-    if (!supportedNVIDIAEncoders.empty() || !supportedVulkanEncoders.empty()) {
-        std::println("Loaded supported encoders from config: NVIDIA={}, Vulkan={}", supportedNVIDIAEncoders.size(), supportedVulkanEncoders.size());
+    if (!supportedNVIDIAEncoders.empty() || !supportedAMDEncoders.empty() || !supportedVulkanEncoders.empty()) {
+        std::println("Loaded supported encoders from config: NVIDIA={}, AMD={}, Vulkan={}", supportedNVIDIAEncoders.size(), supportedAMDEncoders.size(), supportedVulkanEncoders.size());
     } else {
         nvidiaEncoderThread = std::jthread([this, &config]() {
             supportedNVIDIAEncoders = Encoder::getSupportedNVIDIAEncoders();
             config.setSupportedNVIDIAEncoders(supportedNVIDIAEncoders);
             std::println("NVIDIA encoder detection complete: {} encoders found", supportedNVIDIAEncoders.size());
+        });
+        amdEncoderThread = std::jthread([this, &config]() {
+            supportedAMDEncoders = Encoder::getSupportedAMDEncoders();
+            config.setSupportedAMDEncoders(supportedAMDEncoders);
+            std::println("AMD encoder detection complete: {} encoders found", supportedAMDEncoders.size());
         });
         vulkanEncoderThread = std::jthread([this, &config]() {
             supportedVulkanEncoders = Encoder::getSupportedVulkanEncoders();

@@ -58,10 +58,12 @@ class Video {
     void setRenderer(ScreenRenderer *renderer);
     void receiveEncodedPacket(const std::vector<uint8_t>& packet);
     std::vector<std::string> supportedNVIDIAEncoders;
+    std::vector<std::string> supportedAMDEncoders;
     std::vector<std::string> supportedVulkanEncoders;
 
   private:
     std::jthread nvidiaEncoderThread;
+    std::jthread amdEncoderThread;
     std::jthread vulkanEncoderThread;
 
     VulkanWindow *m_vulkanWindow = nullptr;
