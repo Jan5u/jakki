@@ -442,10 +442,7 @@ void ScreenRenderer::createVideoImage(uint32_t width, uint32_t height) {
 void ScreenRenderer::releaseVideoImage() {
     VkDevice dev = m_window->device();
     
-    if (m_imageDescSet) {
-        m_devFuncs->vkFreeDescriptorSets(dev, m_imageDescPool, 1, &m_imageDescSet);
-        m_imageDescSet = VK_NULL_HANDLE;
-    }
+    m_imageDescSet = VK_NULL_HANDLE;
     
     if (m_imageDescSetLayout) {
         m_devFuncs->vkDestroyDescriptorSetLayout(dev, m_imageDescSetLayout, nullptr);
@@ -937,23 +934,27 @@ void ScreenRenderer::updateVideoImage(AVFrame *frame) {
 void ScreenRenderer::createImageDescriptorSet() {
     VkDevice dev = m_window->device();
     VkResult err;
-    
-    if (!m_imageDescPool) {
-        VkDescriptorPoolSize poolSize = {};
-        poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSize.descriptorCount = 1;
-        
-        VkDescriptorPoolCreateInfo poolInfo = {};
-        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        poolInfo.maxSets = 1;
-        poolInfo.poolSizeCount = 1;
-        poolInfo.pPoolSizes = &poolSize;
-        
-        err = m_devFuncs->vkCreateDescriptorPool(dev, &poolInfo, nullptr, &m_imageDescPool);
-        if (err != VK_SUCCESS) {
-            std::println("Failed to create image descriptor pool: {}", static_cast<int>(err));
-            return;
-        }
+
+    if (m_imageDescPool) {
+        m_devFuncs->vkDestroyDescriptorPool(dev, m_imageDescPool, nullptr);
+        m_imageDescPool = VK_NULL_HANDLE;
+        m_imageDescSet = VK_NULL_HANDLE;
+    }
+
+    VkDescriptorPoolSize poolSize = {};
+    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSize.descriptorCount = 2;
+
+    VkDescriptorPoolCreateInfo poolInfo = {};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = 2;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+
+    err = m_devFuncs->vkCreateDescriptorPool(dev, &poolInfo, nullptr, &m_imageDescPool);
+    if (err != VK_SUCCESS) {
+        std::println("Failed to create image descriptor pool: {}", static_cast<int>(err));
+        return;
     }
     
     if (m_imageDescSetLayout) {
@@ -977,11 +978,6 @@ void ScreenRenderer::createImageDescriptorSet() {
     if (err != VK_SUCCESS) {
         std::println("Failed to create image descriptor set layout: {}", static_cast<int>(err));
         return;
-    }
-    
-    if (m_imageDescSet) {
-        m_devFuncs->vkFreeDescriptorSets(dev, m_imageDescPool, 1, &m_imageDescSet);
-        m_imageDescSet = VK_NULL_HANDLE;
     }
     
     VkDescriptorSetAllocateInfo allocInfo = {};
