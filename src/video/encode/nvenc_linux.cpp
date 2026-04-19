@@ -289,12 +289,6 @@ bool NvencLinuxEncoder::initCUDA() {
 }
 
 bool NvencLinuxEncoder::initFFmpegEncoder(int width, int height) {
-    output_file = fopen("./output.h264", "wb");
-    if (!output_file) {
-        std::println("Failed to open output file");
-        return false;
-    }
-    
     const char* encoder_name = getFFmpegEncoderName();
     const AVCodec *codec = avcodec_find_encoder_by_name(encoder_name);
     if (!codec) {

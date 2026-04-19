@@ -8,8 +8,19 @@
 #include <print>
 #include <stdexcept>
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef _WINSOCKAPI_
+#define _WINSOCKAPI_
+#endif
+#include <winsock2.h>
+#endif
+
 extern "C" {
 #include <libavcodec/avcodec.h>
+#include <libavutil/frame.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext_vulkan.h>
 }
@@ -20,6 +31,9 @@ enum class EncoderType {
     NVENC_H264,
     NVENC_HEVC,
     NVENC_AV1,
+    AMF_H264,
+    AMF_HEVC,
+    AMF_AV1,
 };
 
 class Encoder {
@@ -33,6 +47,7 @@ public:
     static EncoderType nameToEncoderType(const std::string& name);
     static std::vector<EncoderType> getAvailableEncoders();
     static std::vector<std::string> getSupportedNVIDIAEncoders();
+    static std::vector<std::string> getSupportedAMDEncoders();
     static std::vector<std::string> getSupportedVulkanEncoders();
     static std::vector<std::string> getSupportedEncoders();
 };
@@ -48,7 +63,7 @@ public:
 #ifdef _WIN32
 class D3D11Encoder : public Encoder {
 public:
-    virtual bool encodeD3D11Frame(void* d3d11_texture) = 0;
+    virtual bool encodeD3D11Frame(AVFrame* frame) = 0;
     static std::unique_ptr<D3D11Encoder> create(EncoderType type, Network* network);
 };
 #endif

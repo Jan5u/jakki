@@ -116,6 +116,9 @@
     <addaction name="actionDeafen"/>
     <addaction name="separator"/>
     <addaction name="actionShare_Screen"/>
+    <addaction name="actionStop_Screen_Share"/>
+    <addaction name="separator"/>
+    <addaction name="actionDisconnect_2"/>
    </widget>
    <addaction name="menuConnect"/>
    <addaction name="menuChannel"/>
@@ -148,7 +151,7 @@
     <string>Disconnect</string>
    </property>
    <property name="shortcut">
-    <string>Ctrl+D</string>
+    <string>Ctrl+B</string>
    </property>
   </action>
   <action name="actionMute">
@@ -168,6 +171,9 @@
    </property>
   </action>
   <action name="actionShare_Screen">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
    <property name="text">
     <string>Share Screen</string>
    </property>
@@ -178,6 +184,22 @@
   <action name="actionAbout_Qt">
    <property name="text">
     <string>About Qt</string>
+   </property>
+  </action>
+  <action name="actionStop_Screen_Share">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Stop Screenshare</string>
+   </property>
+  </action>
+  <action name="actionDisconnect_2">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Disconnect</string>
    </property>
   </action>
  </widget>

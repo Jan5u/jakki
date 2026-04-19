@@ -1,5 +1,15 @@
 #pragma once
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef _WINSOCKAPI_
+#define _WINSOCKAPI_
+#endif
+#include <winsock2.h>
+#endif
+
 #include <QDebug>
 #include <QSize>
 #include <QVersionNumber>
@@ -41,14 +51,19 @@ class Video {
     VulkanWindow *createVulkanWindow();
     QWidget *createVulkanTab(QWidget *parent);
     void selectScreen();
+    void startScreenShareCapture();
+    void startScreenShareEncoding(const std::string& encoderName);
+    void stopScreenShareCapture();
     void startDecodeThread();
     void setRenderer(ScreenRenderer *renderer);
     void receiveEncodedPacket(const std::vector<uint8_t>& packet);
     std::vector<std::string> supportedNVIDIAEncoders;
+    std::vector<std::string> supportedAMDEncoders;
     std::vector<std::string> supportedVulkanEncoders;
 
   private:
     std::jthread nvidiaEncoderThread;
+    std::jthread amdEncoderThread;
     std::jthread vulkanEncoderThread;
 
     VulkanWindow *m_vulkanWindow = nullptr;

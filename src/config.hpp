@@ -26,9 +26,13 @@ class Config {
     bool getVoiceGateEnabled() const;
     void setVoiceGateEnabled(bool enabled);
     void setSupportedNVIDIAEncoders(const std::vector<std::string>& encoders);
+    void setSupportedAMDEncoders(const std::vector<std::string>& encoders);
     void setSupportedVulkanEncoders(const std::vector<std::string>& encoders);
     std::vector<std::string> getSupportedNVIDIAEncoders() const;
+    std::vector<std::string> getSupportedAMDEncoders() const;
     std::vector<std::string> getSupportedVulkanEncoders() const;
+    std::string getPreferredDecoder() const;
+    void setPreferredDecoder(const std::string &decoder);
 
   private:
     std::filesystem::path configPath;

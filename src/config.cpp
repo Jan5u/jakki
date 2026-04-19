@@ -215,6 +215,11 @@ void Config::setSupportedNVIDIAEncoders(const std::vector<std::string>& encoders
     save();
 }
 
+void Config::setSupportedAMDEncoders(const std::vector<std::string>& encoders) {
+    data["Encoders"]["AMD"] = join(encoders);
+    save();
+}
+
 void Config::setSupportedVulkanEncoders(const std::vector<std::string>& encoders) {
     data["Encoders"]["Vulkan"] = join(encoders);
     save();
@@ -228,12 +233,37 @@ std::vector<std::string> Config::getSupportedNVIDIAEncoders() const {
     return split(keyIt->second);
 }
 
+std::vector<std::string> Config::getSupportedAMDEncoders() const {
+    auto sectionIt = data.find("Encoders");
+    if (sectionIt == data.end()) return {};
+    auto keyIt = sectionIt->second.find("AMD");
+    if (keyIt == sectionIt->second.end()) return {};
+    return split(keyIt->second);
+}
+
 std::vector<std::string> Config::getSupportedVulkanEncoders() const {
     auto sectionIt = data.find("Encoders");
     if (sectionIt == data.end()) return {};
     auto keyIt = sectionIt->second.find("Vulkan");
     if (keyIt == sectionIt->second.end()) return {};
     return split(keyIt->second);
+}
+
+std::string Config::getPreferredDecoder() const {
+    auto sectionIt = data.find("Decoder");
+    if (sectionIt == data.end()) {
+        return "auto";
+    }
+    auto keyIt = sectionIt->second.find("Preferred");
+    if (keyIt == sectionIt->second.end()) {
+        return "auto";
+    }
+    return keyIt->second;
+}
+
+void Config::setPreferredDecoder(const std::string &decoder) {
+    data["Decoder"]["Preferred"] = decoder;
+    save();
 }
 
 void Config::createDefaultConfig() {
@@ -249,6 +279,9 @@ void Config::createDefaultConfig() {
     file << "\n";
     file << "[Appearance]\n";
     file << "Theme=Default\n";
+    file << "\n";
+    file << "[Decoder]\n";
+    file << "Preferred=auto\n";
     file << "\n";
 
     file.close();

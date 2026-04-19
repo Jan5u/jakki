@@ -10,7 +10,7 @@
 #endif
 
 Video::Video(Config& config, Network &network) : m_network(network) {
-    m_decoder = std::make_unique<Decoder>();
+    m_decoder = std::make_unique<Decoder>(config.getPreferredDecoder());
 #ifdef _WIN32
     pImpl = std::make_unique<DxgiCapture>(&network);
     std::println("Created DXGI video implementation");
@@ -19,15 +19,21 @@ Video::Video(Config& config, Network &network) : m_network(network) {
     std::println("Created PipeWire video implementation");
 #endif
     supportedNVIDIAEncoders = config.getSupportedNVIDIAEncoders();
+    supportedAMDEncoders = config.getSupportedAMDEncoders();
     supportedVulkanEncoders = config.getSupportedVulkanEncoders();
 
-    if (!supportedNVIDIAEncoders.empty() || !supportedVulkanEncoders.empty()) {
-        std::println("Loaded supported encoders from config: NVIDIA={}, Vulkan={}", supportedNVIDIAEncoders.size(), supportedVulkanEncoders.size());
+    if (!supportedNVIDIAEncoders.empty() || !supportedAMDEncoders.empty() || !supportedVulkanEncoders.empty()) {
+        std::println("Loaded supported encoders from config: NVIDIA={}, AMD={}, Vulkan={}", supportedNVIDIAEncoders.size(), supportedAMDEncoders.size(), supportedVulkanEncoders.size());
     } else {
         nvidiaEncoderThread = std::jthread([this, &config]() {
             supportedNVIDIAEncoders = Encoder::getSupportedNVIDIAEncoders();
             config.setSupportedNVIDIAEncoders(supportedNVIDIAEncoders);
             std::println("NVIDIA encoder detection complete: {} encoders found", supportedNVIDIAEncoders.size());
+        });
+        amdEncoderThread = std::jthread([this, &config]() {
+            supportedAMDEncoders = Encoder::getSupportedAMDEncoders();
+            config.setSupportedAMDEncoders(supportedAMDEncoders);
+            std::println("AMD encoder detection complete: {} encoders found", supportedAMDEncoders.size());
         });
         vulkanEncoderThread = std::jthread([this, &config]() {
             supportedVulkanEncoders = Encoder::getSupportedVulkanEncoders();
@@ -43,6 +49,38 @@ void Video::selectScreen() {
     if (pImpl) {
         pImpl->selectScreen();
     }
+}
+
+void Video::startScreenShareCapture() {
+    if (!pImpl) {
+        return;
+    }
+    pImpl->startCapture();
+}
+
+void Video::startScreenShareEncoding(const std::string& encoderName) {
+    if (!pImpl) {
+        return;
+    }
+    if (encoderName.empty()) {
+        std::println(stderr, "No encoder selected for screen share");
+        return;
+    }
+
+    try {
+        EncoderType encoderType = Encoder::nameToEncoderType(encoderName);
+        pImpl->startEncoding(encoderType);
+    } catch (const std::exception& ex) {
+        std::println(stderr, "Unsupported encoder selected: {}", encoderName);
+        std::println(stderr, "Details: {}", ex.what());
+    }
+}
+
+void Video::stopScreenShareCapture() {
+    if (!pImpl) {
+        return;
+    }
+    pImpl->stopCapture();
 }
 
 void Video::startDecodeThread() {

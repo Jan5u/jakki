@@ -63,6 +63,12 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(&audioManager, &Audio::defaultDeviceChanged, this, &MainWindow::onDefaultDeviceChanged);
     connect(&audioManager, &Audio::volumeChanged, this, &MainWindow::onVolumeChanged);
     connect(ui->actionShare_Screen, &QAction::triggered, this, &MainWindow::showScreenShareDialog);
+    connect(ui->actionStop_Screen_Share, &QAction::triggered, this, [this]() {
+        videoManager.stopScreenShareCapture();
+        isScreenShareActive = false;
+        ui->actionStop_Screen_Share->setEnabled(false);
+    });
+    connect(ui->actionDisconnect_2, &QAction::triggered, this, &MainWindow::disconnectVoice);
 
     auto whiteIcon = [](const QString &iconPath) {
         QPixmap pixmap(iconPath);
@@ -100,6 +106,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     });
     connect(sbMonitorBtn, &QToolButton::clicked, this, &MainWindow::showScreenShareDialog);
     connect(sbDisconnectVoiceBtn, &QToolButton::clicked, this, &MainWindow::disconnectVoice);
+    sbMonitorBtn->setEnabled(false);
+    sbDisconnectVoiceBtn->setEnabled(false);
 
     model = new QStandardItemModel(this);
     model->setHorizontalHeaderLabels({"Channels"});
@@ -291,12 +299,29 @@ void MainWindow::showScreenShareDialog() {
     Ui::screenShareDialog uiDialog;
     uiDialog.setupUi(&dialog);
 
-    videoManager.selectScreen();
+    connect(uiDialog.pushButton, &QPushButton::clicked, &dialog, [this]() {
+        videoManager.selectScreen();
+        videoManager.startScreenShareCapture();
+        isScreenShareActive = true;
+        ui->actionStop_Screen_Share->setEnabled(true);
+    });
+
+    connect(&dialog, &QDialog::rejected, this, [this]() {
+        videoManager.stopScreenShareCapture();
+        isScreenShareActive = false;
+        ui->actionStop_Screen_Share->setEnabled(false);
+    });
 
     QMap<QString, QString> nvidiaMap = {
         { "H264", "h264_nvenc" },
         { "H265", "hevc_nvenc" },
         { "AV1",  "av1_nvenc" }
+    };
+
+    QMap<QString, QString> amdMap = {
+        { "H264", "h264_amf" },
+        { "H265", "hevc_amf" },
+        { "AV1",  "av1_amf" }
     };
 
     QMap<QString, QString> vulkanMap = {
@@ -308,10 +333,14 @@ void MainWindow::showScreenShareDialog() {
     uiDialog.encodersComboBox->clear();
     
     bool hasNVIDIA = !videoManager.supportedNVIDIAEncoders.empty();
+    bool hasAMD = !videoManager.supportedAMDEncoders.empty();
     bool hasVulkan = !videoManager.supportedVulkanEncoders.empty();
     
     if (hasNVIDIA) {
         uiDialog.encodersComboBox->addItem("NVIDIA", "nvidia");
+    }
+    if (hasAMD) {
+        uiDialog.encodersComboBox->addItem("AMD", "amd");
     }
     if (hasVulkan) {
         uiDialog.encodersComboBox->addItem("Vulkan", "vulkan");
@@ -321,19 +350,29 @@ void MainWindow::showScreenShareDialog() {
         uiDialog.formatsComboBox->clear();
         
         QString selectedEncoderType = uiDialog.encodersComboBox->currentData().toString();
-        const auto& supportedEncoders = (selectedEncoderType == "nvidia") 
-            ? videoManager.supportedNVIDIAEncoders 
-            : videoManager.supportedVulkanEncoders;
+        const std::vector<std::string>* supportedEncoders = nullptr;
+        const QMap<QString, QString>* encoderMap = nullptr;
+
+        if (selectedEncoderType == "nvidia") {
+            supportedEncoders = &videoManager.supportedNVIDIAEncoders;
+            encoderMap = &nvidiaMap;
+        } else if (selectedEncoderType == "amd") {
+            supportedEncoders = &videoManager.supportedAMDEncoders;
+            encoderMap = &amdMap;
+        } else if (selectedEncoderType == "vulkan") {
+            supportedEncoders = &videoManager.supportedVulkanEncoders;
+            encoderMap = &vulkanMap;
+        } else {
+            return;
+        }
         
-        const auto& encoderMap = (selectedEncoderType == "nvidia") ? nvidiaMap : vulkanMap;
-        
-        for (auto it = encoderMap.constBegin(); it != encoderMap.constEnd(); ++it) {
+        for (auto it = encoderMap->constBegin(); it != encoderMap->constEnd(); ++it) {
             const QString& format = it.key();
             const QString& codecName = it.value();
             
             bool isSupported = std::any_of(
-                supportedEncoders.begin(), 
-                supportedEncoders.end(),
+                supportedEncoders->begin(),
+                supportedEncoders->end(),
                 [&codecName](const std::string& encoder) {
                     return QString::fromStdString(encoder) == codecName;
                 }
@@ -357,6 +396,16 @@ void MainWindow::showScreenShareDialog() {
         qDebug() << "Selected encoder type:" << selectedEncoderType;
         qDebug() << "Selected format:" << selectedFormat;
         qDebug() << "Selected codec:" << selectedCodec;
+
+        if (selectedCodec.isEmpty()) {
+            qDebug() << "No codec selected; screen share not started";
+            videoManager.stopScreenShareCapture();
+            isScreenShareActive = false;
+            ui->actionStop_Screen_Share->setEnabled(false);
+            return;
+        }
+
+        videoManager.startScreenShareEncoding(selectedCodec.toStdString());
     }
 }
 
@@ -411,10 +460,22 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
 void MainWindow::disconnectVoice() {
     if (!networkManager.isInVoiceChannel()) {
         qDebug() << "Not in a voice channel";
+        sbMonitorBtn->setEnabled(false);
+        sbDisconnectVoiceBtn->setEnabled(false);
+        isScreenShareActive = false;
+        ui->actionShare_Screen->setEnabled(false);
+        ui->actionStop_Screen_Share->setEnabled(false);
+        ui->actionDisconnect_2->setEnabled(false);
         return;
     }
     qDebug() << "Disconnecting from voice channel";
     networkManager.leaveVoiceChannel();
+    sbMonitorBtn->setEnabled(false);
+    sbDisconnectVoiceBtn->setEnabled(false);
+    isScreenShareActive = false;
+    ui->actionShare_Screen->setEnabled(false);
+    ui->actionStop_Screen_Share->setEnabled(false);
+    ui->actionDisconnect_2->setEnabled(false);
 }
 
 void MainWindow::disconnect() {
@@ -422,6 +483,13 @@ void MainWindow::disconnect() {
     networkManager.disconnectQUIC();
     if (welcomeConnectButton)
         welcomeConnectButton->setEnabled(true);
+
+    sbMonitorBtn->setEnabled(false);
+    sbDisconnectVoiceBtn->setEnabled(false);
+    isScreenShareActive = false;
+    ui->actionShare_Screen->setEnabled(false);
+    ui->actionStop_Screen_Share->setEnabled(false);
+    ui->actionDisconnect_2->setEnabled(false);
 
     model->clear();
     model->setHorizontalHeaderLabels({"Channels"});
@@ -561,6 +629,11 @@ void MainWindow::onTreeViewItemClicked(const QModelIndex &index) {
     } else {
         qDebug() << "Voice channel selected:" << channelName;
         networkManager.joinVoiceChannel(channelName);
+        sbMonitorBtn->setEnabled(true);
+        sbDisconnectVoiceBtn->setEnabled(true);
+        ui->actionShare_Screen->setEnabled(true);
+        ui->actionStop_Screen_Share->setEnabled(isScreenShareActive);
+        ui->actionDisconnect_2->setEnabled(true);
     }
 }
 

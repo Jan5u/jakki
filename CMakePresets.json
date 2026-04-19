@@ -2,7 +2,7 @@
     "version": 8,
     "configurePresets": [
         {
-            "name": "vcpkg-debug",
+            "name": "local-vcpkg-debug",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/debug",
             "cacheVariables": {
@@ -10,19 +10,20 @@
                 "CMAKE_CXX_COMPILER": "cl.exe",
                 "CMAKE_TOOLCHAIN_FILE": "$env{USERPROFILE}/vcpkg/scripts/buildsystems/vcpkg.cmake",
                 "VCPKG_TARGET_TRIPLET": "x64-windows",
+                "VCPKG_HOST_TRIPLET": "x64-windows",
                 "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed"
             }
         },
         {
-            "name": "vcpkg-release",
+            "name": "local-vcpkg-release",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/release",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_CXX_COMPILER": "cl.exe",
                 "CMAKE_TOOLCHAIN_FILE": "$env{USERPROFILE}/vcpkg/scripts/buildsystems/vcpkg.cmake",
-                "VCPKG_TARGET_TRIPLET": "x64-windows-release",
-                "VCPKG_HOST_TRIPLET": "x64-windows-release",
+                "VCPKG_TARGET_TRIPLET": "x64-windows",
+                "VCPKG_HOST_TRIPLET": "x64-windows",
                 "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed",
                 "CMAKE_INSTALL_PREFIX": "${sourceDir}/install"
             }
@@ -40,7 +41,7 @@
             }
         },
         {
-            "name": "gcc-debug",
+            "name": "local-gcc-debug",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/debug",
             "cacheVariables": {
@@ -49,7 +50,7 @@
             }
         },
         {
-            "name": "gcc-release",
+            "name": "local-gcc-release",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/release",
             "cacheVariables": {
