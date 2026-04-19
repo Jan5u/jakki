@@ -5,13 +5,13 @@
       "name": "ffmpeg",
       "default-features": false,
       "features": [
+        "amf",
         "avcodec",
         "avfilter",
         "avformat",
         "nvcodec",
-        "vulkan",
-        "amf",
-        "qsv"
+        "qsv",
+        "vulkan"
       ]
     },
     "nlohmann-json",
@@ -28,7 +28,15 @@
     },
     "qtkeychain-qt6",
     "qtsvg",
+    "sdl3",
     "shaderc",
-    "zstd"
+    "zstd",
+    {
+      "name": "imgui",
+      "features": [
+        "docking-experimental",
+        "sdlgpu3-binding"
+      ]
+    }
   ]
 }
