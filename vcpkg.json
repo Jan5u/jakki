@@ -1,0 +1,13 @@
+{
+  "builtin-baseline": "c3867e714dd3a51c272826eea77267876517ed99",
+  "dependencies": [
+    {
+      "name": "imgui",
+      "features": [
+        "docking-experimental",
+        "sdlgpu3-binding"
+      ]
+    },
+    "sdl3"
+  ]
+}
