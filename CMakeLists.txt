@@ -41,8 +41,11 @@ endif()
 
 
 add_library(platform
+  src/platform/platform.cpp
   src/platform/window.hpp
   src/platform/window.cpp
+  src/platform/audio.hpp
+  src/platform/audio.cpp
 )
 
 target_include_directories(platform
