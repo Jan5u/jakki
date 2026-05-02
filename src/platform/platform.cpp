@@ -1,7 +1,7 @@
 #include <SDL3/SDL.h>
 
-#include <stdio.h>  // printf, fprintf
-#include <stdlib.h> // abort
+#include <stdio.h>
+#include <stdlib.h>
 
 namespace Platform {
 

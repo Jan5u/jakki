@@ -8,6 +8,12 @@
         "sdlgpu3-binding"
       ]
     },
+    {
+      "name": "msquic",
+      "features": [
+        "0-rtt"
+      ]
+    },
     "sdl3"
   ]
 }

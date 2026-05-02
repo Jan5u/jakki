@@ -6,8 +6,8 @@
 #include "imgui_impl_sdlgpu3.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_video.h>
-#include <stdio.h>  // printf, fprintf
-#include <stdlib.h> // abort
+#include <stdio.h>
+#include <stdlib.h>
 
 int Window::init() {
     float main_scale = SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());

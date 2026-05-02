@@ -8,6 +8,7 @@ project(jakki LANGUAGES CXX)
 
 find_package(SDL3 REQUIRED)
 find_package(imgui)
+find_package(msquic REQUIRED)
 
 include(FetchContent)
 
@@ -38,7 +39,10 @@ if(NOT imgui_FOUND)
     add_library(imgui::imgui ALIAS imgui)
 endif()
 
-
+add_library(core
+  src/core/network.hpp
+  src/core/network.cpp
+)
 
 add_library(platform
   src/platform/platform.cpp
@@ -60,4 +64,8 @@ target_link_libraries(platform PUBLIC
   imgui::imgui
 )
 
-target_link_libraries(jakki PRIVATE platform)
+target_link_libraries(core PUBLIC
+  msquic
+)
+
+target_link_libraries(jakki PRIVATE core platform)
