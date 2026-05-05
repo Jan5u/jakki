@@ -3,19 +3,26 @@
 #include "platform/window.hpp"
 #include "core/network.hpp"
 
+#include <thread>
+
 int main() {
     Platform::init();
 
     Network network;
-    network.init();
-
-    const uint8_t payload[] = {'h','e','y'};
-    network.sendDatagram(payload, sizeof(payload));
-
     Audio audio;
-    audio.init();
-
     Window window;
+    
+    std::jthread network_thread([&network]() {
+        if (!network.init()) {
+            return;
+        }
+
+        const uint8_t payload[] = {'h', 'e', 'y'};
+        network.sendDatagram(payload, sizeof(payload));
+    });
+
+    std::jthread audio_thread([&audio]() { audio.init(); });
+
     window.init();
 
     network.shutdown();

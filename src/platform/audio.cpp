@@ -7,17 +7,23 @@ static void SDLCALL playbackCallback(void *userdata, SDL_AudioStream *astream, i
     while (additional_amount > 0) {
         float samples[128];
         const int total = SDL_min(additional_amount, SDL_arraysize(samples));
-        int i;
-
-        // process audio here
-
+        SDL_memset(samples, 0, static_cast<size_t>(total) * sizeof(float));
         SDL_PutAudioStreamData(astream, samples, total * sizeof(float));
         additional_amount -= total;
     }
 }
 
 static void SDLCALL captureCallback(void *userdata, SDL_AudioStream *astream, int additional_amount, int total_amount) {
-    // SDL_GetAudioStreamData();
+    int remaining = additional_amount;
+    while (remaining > 0) {
+        uint8_t buffer[256];
+        const int to_read = SDL_min(remaining, static_cast<int>(sizeof(buffer)));
+        const int read_bytes = SDL_GetAudioStreamData(astream, buffer, to_read);
+        if (read_bytes <= 0) {
+            break;
+        }
+        remaining -= read_bytes;
+    }
 }
 
 int Audio::init() {
