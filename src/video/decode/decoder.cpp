@@ -164,14 +164,11 @@ bool Decoder::initHardwareDecoder(const char *decoderName, AVHWDeviceType device
 }
 
 bool Decoder::initSoftwareDecoder() {
-    decoder = avcodec_find_decoder(AV_CODEC_ID_H264);
+    decoder = avcodec_find_decoder_by_name("libdav1d");
     if (!decoder) {
-        std::println("No decoder found for H.264");
+        std::println("Software decoder 'libdav1d' not found");
         return false;
     }
-
-    type = AV_HWDEVICE_TYPE_NONE;
-    hw_pix_fmt = AV_PIX_FMT_NONE;
 
     if (!(decoder_ctx = avcodec_alloc_context3(decoder))) {
         std::println("could not allocate codec context");
@@ -200,39 +197,11 @@ void Decoder::decoderInit() {
         return;
     }
 
-    std::vector<std::pair<const char *, AVHWDeviceType>> candidates;
-    if (m_preferredDecoder == "vulkan") {
-        candidates = {
-            {"", AV_HWDEVICE_TYPE_VULKAN},
-            {"h264_cuvid", AV_HWDEVICE_TYPE_CUDA}
-        };
-    } else if (m_preferredDecoder == "nvidia") {
-        candidates = {
-            {"h264_cuvid", AV_HWDEVICE_TYPE_CUDA},
-            {"", AV_HWDEVICE_TYPE_VULKAN}
-        };
-    } else {
-        candidates = {
-            {"h264_cuvid", AV_HWDEVICE_TYPE_CUDA},
-            {"", AV_HWDEVICE_TYPE_VULKAN}
-        };
-    }
-
     bool initialized = false;
-    for (const auto &candidate : candidates) {
-        if (initHardwareDecoder(candidate.first, candidate.second)) {
-            std::println("Using hardware decoder: {}", decoder ? decoder->name : "unknown");
-            initialized = true;
-            break;
-        }
-    }
 
-    if (!initialized) {
-        std::println("Falling back to software decoder");
-        if (!initSoftwareDecoder()) {
-            av_packet_free(&packet);
-            return;
-        }
+    if (initHardwareDecoder("", AV_HWDEVICE_TYPE_VULKAN)) {
+        std::println("Using hardware decoder: {}", decoder ? decoder->name : "unknown");
+        initialized = true;
     }
 
     parser = av_parser_init(AV_CODEC_ID_H264);
