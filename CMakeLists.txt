@@ -3,8 +3,7 @@ project(jakki VERSION 0.2.0 LANGUAGES CXX HOMEPAGE_URL https://github.com/Jan5u/
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(CMAKE_AUTORCC ON)
-
+find_package(SDL3)
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Svg)
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
@@ -49,72 +48,39 @@ function(compile_shader target shader_file)
     target_sources(${target} PRIVATE ${output_file})
 endfunction()
 
-qt_standard_project_setup()
+
 set(COMMON_SOURCES
     src/main.cpp
-    src/gui.hpp
-    src/gui.cpp
-    src/network.hpp
-    src/network.cpp
-    src/auth.hpp
-    src/auth.cpp
-    src/audio/audio_impl.hpp
-    src/audio/audio_impl.cpp
-    src/audio/audio.hpp
-    src/audio/audio.cpp
-    src/config.hpp
-    src/config.cpp
-    src/chat/text.hpp
-    src/chat/text.cpp
-    src/chat/emoji_data.hpp
-    src/chat/emoji_data.cpp
-    src/chat/emote_manager.hpp
-    src/chat/emote_manager.cpp
-    src/chat/emote_completer.hpp
-    src/chat/emote_completer.cpp
-    src/video/video.hpp
-    src/video/video.cpp
-    src/video/decode/decoder.hpp
-    src/video/decode/decoder.cpp
-    src/video/render/vulkan_renderer.hpp
-    src/video/render/vulkan_renderer.cpp
-    src/video/render/screen_renderer.hpp
-    src/video/render/screen_renderer.cpp
-    src/video/encode/encoder.hpp
-    src/video/encode/encoder.cpp
-    src/video/capture/capture.hpp
-    src/video/capture/capture.cpp
 )
-if(WIN32)
-    list(APPEND COMMON_SOURCES
-        src/audio/wasapi_impl.hpp
-        src/audio/wasapi_impl.cpp
-        src/video/capture/capture_windows.hpp
-        src/video/capture/capture_windows.cpp
-        src/video/encode/nvenc_windows.hpp
-        src/video/encode/nvenc_windows.cpp
-        ui/jakki.rc
-    )
-else()
-    list(APPEND COMMON_SOURCES
-        src/audio/pipewire_impl.hpp
-        src/audio/pipewire_impl.cpp
-        src/video/capture/capture_linux.hpp
-        src/video/capture/capture_linux.cpp
-        src/video/encode/nvenc_linux.hpp
-        src/video/encode/nvenc_linux.cpp
-    )
-endif()
 
-qt_add_executable(jakki ui/jakki.qrc ${COMMON_SOURCES})
+add_executable(jakki
+    ${COMMON_SOURCES}
+    third_party/imgui/imgui.cpp
+    third_party/imgui/imgui_draw.cpp
+    third_party/imgui/imgui_tables.cpp
+    third_party/imgui/imgui_widgets.cpp
+    third_party/imgui/imgui_demo.cpp
+    third_party/imgui/backends/imgui_impl_sdl3.cpp
+    third_party/imgui/backends/imgui_impl_sdlrenderer3.cpp
+)
+target_include_directories(jakki PRIVATE
+    third_party/imgui
+    third_party/imgui/backends
+)
 
-qt_add_ui(jakki SOURCES ui/main.ui ui/connect.ui ui/textchannel.ui ui/settings.ui ui/adminpanel.ui ui/screenshare.ui)
+
+
+
+
+
+
+
 
 compile_shader(jakki ui/shaders/screen.vert)
 compile_shader(jakki ui/shaders/screen.frag)
 compile_shader(jakki ui/shaders/bgra_to_nv12.comp)
 
-target_link_libraries(jakki PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Svg Qt6Keychain::Qt6Keychain OpenSSL::SSL OpenSSL::Crypto nlohmann_json::nlohmann_json Threads::Threads)
+target_link_libraries(jakki PRIVATE SDL3::SDL3 Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Svg Qt6Keychain::Qt6Keychain OpenSSL::SSL OpenSSL::Crypto nlohmann_json::nlohmann_json Threads::Threads)
 
 if(WIN32)
     set_target_properties(jakki PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)
