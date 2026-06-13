@@ -3,6 +3,8 @@
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlrenderer3.h"
+#include <imgui_internal.h>
+
 #include <memory>
 #include <stdio.h>
 
@@ -25,7 +27,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
     }
     float main_scale = SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());
     SDL_WindowFlags window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
-    app->window = SDL_CreateWindow("Dear ImGui SDL3+SDL_Renderer example", (int)(1280 * main_scale), (int)(800 * main_scale), window_flags);
+    app->window = SDL_CreateWindow("Jakki", (int)(1280 * main_scale), (int)(800 * main_scale), window_flags);
     if (app->window == nullptr) {
         printf("Error: SDL_CreateWindow(): %s\n", SDL_GetError());
         return SDL_APP_FAILURE;
@@ -76,38 +78,52 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     bool show_another_window = false;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
-    if (show_demo_window)
-        ImGui::ShowDemoWindow(&show_demo_window);
+    ImGuiID dockspace_id = ImGui::GetID("My Dockspace");
+    ImGuiViewport *viewport = ImGui::GetMainViewport();
 
-    {
-        static float f = 0.0f;
-        static int counter = 0;
-
-        ImGui::Begin("Hello, world!");
-
-        ImGui::Text("This is some useful text.");
-        ImGui::Checkbox("Demo Window", &show_demo_window);
-        ImGui::Checkbox("Another Window", &show_another_window);
-
-        ImGui::SliderFloat("float", &f, 0.0f, 1.0f);
-        ImGui::ColorEdit3("clear color", (float *)&clear_color);
-
-        if (ImGui::Button("Button"))
-            counter++;
-        ImGui::SameLine();
-        ImGui::Text("counter = %d", counter);
-
-        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-        ImGui::End();
+    if (ImGui::DockBuilderGetNode(dockspace_id) == nullptr) {
+        ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace);
+        ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->Size);
+        ImGuiID dock_id_left = 0;
+        ImGuiID dock_id_main = dockspace_id;
+        ImGui::DockBuilderSplitNode(dock_id_main, ImGuiDir_Left, 0.20f, &dock_id_left, &dock_id_main);
+        ImGuiID dock_id_left_top = 0;
+        ImGuiID dock_id_left_bottom = 0;
+        ImGui::DockBuilderSplitNode(dock_id_left, ImGuiDir_Up, 0.80f, &dock_id_left_top, &dock_id_left_bottom);
+        ImGuiID dock_id_right = 0;
+        ImGui::DockBuilderSplitNode(dock_id_main, ImGuiDir_Right, 0.20f, &dock_id_right, &dock_id_main);
+        ImGui::DockBuilderDockWindow("Tabs", dock_id_main);
+        ImGui::DockBuilderDockWindow("Channels", dock_id_left_top);
+        ImGui::DockBuilderDockWindow("User", dock_id_left_bottom);
+        ImGui::DockBuilderDockWindow("Users", dock_id_right);
+        ImGui::DockBuilderFinish(dockspace_id);
     }
 
-    if (show_another_window) {
-        ImGui::Begin("Another Window", &show_another_window);
-        ImGui::Text("Hello from another window!");
-        if (ImGui::Button("Close Me"))
-            show_another_window = false;
-        ImGui::End();
+    ImGui::DockSpaceOverViewport(dockspace_id, viewport, ImGuiDockNodeFlags_PassthruCentralNode);
+
+    ImGui::Begin("Tabs");
+    if (ImGui::BeginTabBar("MainTabs")) {
+        if (ImGui::BeginTabItem("General")) {
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Screenshare")) {
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Debug")) {
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
     }
+    ImGui::End();
+
+    ImGui::Begin("Channels");
+    ImGui::End();
+
+    ImGui::Begin("User");
+    ImGui::End();
+
+    ImGui::Begin("Users");
+    ImGui::End();
 
     ImGui::Render();
     SDL_SetRenderScale(app->renderer, io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
