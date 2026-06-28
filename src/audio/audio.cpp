@@ -10,8 +10,7 @@
 #include "pipewire_impl.hpp"
 #endif
 
-Audio::Audio(Network& network, Config& config, QObject* parent)
-    : QObject(parent) {
+Audio::Audio(Network& network, Config& config) {
     // Create the platform-specific implementation
 #ifdef _WIN32
     pImpl = std::make_unique<WasapiImpl>(network, config);
@@ -21,20 +20,20 @@ Audio::Audio(Network& network, Config& config, QObject* parent)
     std::cout << "Created PipeWire audio implementation" << std::endl;
 #endif
 
-    // Set up callback for device changes
-    pImpl->setDeviceChangeCallback([this]() {
-        emit deviceListChanged();
-    });
+    // // Set up callback for device changes
+    // pImpl->setDeviceChangeCallback([this]() {
+    //     emit deviceListChanged();
+    // });
 
-    // Set up callback for default device changes
-    pImpl->setDefaultDeviceChangeCallback([this](bool isInput) {
-        emit defaultDeviceChanged(isInput);
-    });
+    // // Set up callback for default device changes
+    // pImpl->setDefaultDeviceChangeCallback([this](bool isInput) {
+    //     emit defaultDeviceChanged(isInput);
+    // });
 
-    // Set up callback for volume changes
-    pImpl->setVolumeChangeCallback([this](bool isInput, float volume) {
-        emit volumeChanged(isInput, volume);
-    });
+    // // Set up callback for volume changes
+    // pImpl->setVolumeChangeCallback([this](bool isInput, float volume) {
+    //     emit volumeChanged(isInput, volume);
+    // });
 
     // Initialize the audio system
     pImpl->initAudio();

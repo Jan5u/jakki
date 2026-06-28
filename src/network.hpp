@@ -1,8 +1,10 @@
 #pragma once
 
-#include <cstring>
-#include <iostream>
+#include <print>
+#include <string>
+#include <expected>
 #include <thread>
+
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -16,57 +18,53 @@
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
-#include "audio/audio.hpp"
-#include "auth.hpp"
 
-#include <QJsonArray>
-#include <QObject>
-#include <QString>
-#include <QStringList>
+
+#include "audio/audio.hpp"
+class Auth;
+class GUI;
+class Audio;
 
 using json = nlohmann::json;
 
-class Audio;
-class Auth;
-class Video;
-
-class Network : public QObject {
-    Q_OBJECT
-
+class Network {
     public:
         Network();
-        Network(Audio& audio);
-        Network(Audio& audio, Auth& auth);
-        void connectToServer(QString address, QString port);
-        void disconnectQUIC();
-        void sendVoicePackets(std::vector<uint8_t> encodedData);
-        void joinVoiceChannel(QString channelName);
-        void leaveVoiceChannel();
-        bool isInVoiceChannel() const { return inVoiceChannel; }
-        void joinScreenShare(QString userName);
-        void sendScreensharePackets(std::vector<uint8_t> encodedData);
-        bool isConnected() const { return connected; }
-        void sendAdminMessage(const QString& requestType);
-        void sendTextMessage(const QString& jsonMessage);
-        void requestUserList();
-        void setVideoManager(Video* video);
+        // Network(Audio& audio);
+        // Network(Audio& audio, Auth& auth);
+        void connectToServer(std::string& address, std::string& port);
+        void setAuthManager(Auth* auth);
+        void setGUI(GUI* gui);
+        void setAudio(Audio* audio);
 
-    signals:
-        void channelsReceived(const QStringList& channels);
-        void userJoinedChannel(const QString& user, const QString& channel);
-        void userLeftChannel(const QString& user, const QString& channel);
-        void authenticationFailed(const QString& reason);
-        void adminResponseReceived(const QString& request, const QString& jsonData);
-        void textMessageReceived(const QString& channel, const QString& sender, const QString& content, bool compressed);
-        void historyResponseReceived(const QString& channel, const QJsonArray& messages);
-        void emoteListReceived(const QJsonArray& emotes);
-        void typingIndicatorReceived(const QString& channel, const QString& user);
-        void usersListReceived(const QStringList& onlineUsers, const QStringList& offlineUsers);
-        void userStatusChanged(const QString& user, bool online);
+        // void disconnectQUIC();
+        void sendVoicePackets(std::vector<uint8_t> encodedData);
+        void joinVoiceChannel(const std::string& channelName);
+        void leaveVoiceChannel();
+        // bool isInVoiceChannel() const { return inVoiceChannel; }
+        // void joinScreenShare(QString userName);
+        // void sendScreensharePackets(std::vector<uint8_t> encodedData);
+        // bool isConnected() const { return connected; }
+        // void sendAdminMessage(const QString& requestType);
+        // void sendTextMessage(const QString& jsonMessage);
+        // void requestUserList();
+        // void setVideoManager(Video* video);
+
+    // signals:
+    //     void channelsReceived(const QStringList& channels);
+    //     void userJoinedChannel(const QString& user, const QString& channel);
+    //     void userLeftChannel(const QString& user, const QString& channel);
+    //     void authenticationFailed(const QString& reason);
+    //     void adminResponseReceived(const QString& request, const QString& jsonData);
+    //     void textMessageReceived(const QString& channel, const QString& sender, const QString& content, bool compressed);
+    //     void historyResponseReceived(const QString& channel, const QJsonArray& messages);
+    //     void emoteListReceived(const QJsonArray& emotes);
+    //     void typingIndicatorReceived(const QString& channel, const QString& user);
+    //     void usersListReceived(const QStringList& onlineUsers, const QStringList& offlineUsers);
+    //     void userStatusChanged(const QString& user, bool online);
 
 
     private:
-        int sockfd;
         std::jthread recvEventThread;
         std::jthread recvVoiceThread;
         std::jthread recvScreenshareThread;
@@ -81,19 +79,20 @@ class Network : public QObject {
         SSL_CTX *ctx = nullptr;
         SSL *ssl = nullptr;
         BIO *bio = nullptr;
-        void initOpenssl();
-        void connectQUIC(QString address, QString port);
+        auto connectQUIC(std::string& address, std::string& port) -> std::expected<void, std::string>;
         void sendMessage(SSL *stream);
-        void shutdown_ssl(SSL *ssl);
+        // void shutdown_ssl(SSL *ssl);
         void sendHeartbeat();
         void receiveEventPackets();
         void receiveVoicePackets();
-        void receiveScreensharePackets();
+        // void receiveScreensharePackets();
         void handleEventMessage(std::string msg); 
         bool performAuthentication();
         static BIO *create_socket_bio(const char *hostname, const char *port, int family, BIO_ADDR **peer_addr);
-        Audio* audioManager;
-        Auth* authManager;
-        Video* videoManager = nullptr;
+        // Audio* audioManager;
+        Auth* authManager = nullptr;
+        GUI* gui = nullptr;
+        Audio* audio = nullptr;
+        // Video* videoManager = nullptr;
         bool inVoiceChannel = false;
 };

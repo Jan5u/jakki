@@ -4,18 +4,36 @@
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlrenderer3.h"
 #include <imgui_internal.h>
+#include <imgui_stdlib.h>
 
 #include <memory>
-#include <stdio.h>
+#include <string>
+#include <print>
 
 #include <SDL3/SDL.h>
 
 #define SDL_MAIN_USE_CALLBACKS
 #include <SDL3/SDL_main.h>
 
+#include "network.hpp"
+#include "auth.hpp"
+#include "config.hpp"
+#include "gui.hpp"
+#include "audio/audio.hpp"
+
+static int selectedChannel = -1;
+static int selectedUser = -1;
 struct App {
     SDL_Window *window = nullptr;
     SDL_Renderer *renderer = nullptr;
+    std::string connect_address = "127.0.0.1";
+    std::string connect_port = "7777";
+    Network network;
+    Auth auth;
+    GUI gui;
+    Config config;
+    Audio audio{network, config};
+    std::string username = "jansu";
 };
 
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
@@ -53,8 +71,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
     ImGuiStyle &style = ImGui::GetStyle();
     style.ScaleAllSizes(main_scale);
     style.FontScaleDpi = main_scale;
+    style.Colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
     ImGui_ImplSDL3_InitForSDLRenderer(app->window, app->renderer);
     ImGui_ImplSDLRenderer3_Init(app->renderer);
+
+    app->network.setAuthManager(&app->auth);
+    app->network.setGUI(&app->gui);
+    app->network.setAudio(&app->audio);
+    app->auth.setUsername(app->username);
 
     *appstate = app.release();
 
@@ -77,6 +101,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     bool show_demo_window = true;
     bool show_another_window = false;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+    // ImGui::ShowDemoWindow(&show_demo_window);
 
     ImGuiID dockspace_id = ImGui::GetID("My Dockspace");
     ImGuiViewport *viewport = ImGui::GetMainViewport();
@@ -117,9 +142,60 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     ImGui::End();
 
     ImGui::Begin("Channels");
+
+    ImGui::BeginChild("user_card", ImVec2(0, 32), true);
+    ImGui::Text("%s", app->username.c_str());
+    ImGui::EndChild();
+
+    auto channels = app->gui.getChannelList();
+    int idx_c = 0;
+    int idx_u = 0;
+    for (const auto &ch : channels) {
+        if (ImGui::Selectable(ch.name.c_str(), selectedChannel == idx_c)) {
+            selectedChannel = idx_c;
+            if (!ch.name.starts_with('#')) {
+                app->network.joinVoiceChannel(ch.name);
+            }
+        }
+        for (const auto &user : ch.users) {
+            if (ImGui::Selectable(user.username.c_str(), selectedUser == idx_u)) {
+                selectedUser = idx_u;
+            }
+            idx_u++;
+        }
+        idx_c++;
+    }
+
     ImGui::End();
 
     ImGui::Begin("User");
+    if (ImGui::Button("Connect")) {
+        ImGui::OpenPopup("Connect to Server");
+    }
+    if (ImGui::BeginPopupModal("Connect to Server", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Address");
+        ImGui::InputText("##Address", &app->connect_address);
+        ImGui::Text("Port");
+        ImGui::InputText("##Port", &app->connect_port);
+        ImGui::Text("Username");
+        ImGui::InputText("##Username", &app->username);
+
+
+    
+    if (ImGui::Button("Connect")) {
+        ImGui::CloseCurrentPopup();
+        std::println("Connect to: {}", app->connect_address);
+        app->auth.setUsername(app->username);
+        app->network.connectToServer(app->connect_address, app->connect_port);
+    }
+    
+    ImGui::SameLine();
+    if (ImGui::Button("Close")) {
+        ImGui::CloseCurrentPopup();
+    }
+    
+    ImGui::EndPopup();
+    }
     ImGui::End();
 
     ImGui::Begin("Users");

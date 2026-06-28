@@ -1,6 +1,5 @@
 #pragma once
 
-#include <QObject>
 #include <memory>
 #include <string>
 #include <vector>
@@ -19,12 +18,10 @@ struct AudioDevice;
  * platform-specific implementation details. Depending on the platform,
  * it will internally use either PipeWire (Linux) or WASAPI (Windows).
  */
-class Audio : public QObject {
-    Q_OBJECT
-
+class Audio {
 public:
     // Constructor and destructor
-    Audio(Network& network, Config& config, QObject* parent = nullptr);
+    Audio(Network& network, Config& config);
     ~Audio();
     
     // Delete copy and move operations to ensure proper resource management
@@ -58,10 +55,10 @@ public:
     void setVoiceGateEnabled(bool enabled);
     bool isVoiceGateEnabled() const;
 
-signals:
-    void deviceListChanged();
-    void defaultDeviceChanged(bool isInput);
-    void volumeChanged(bool isInput, float volume);
+// signals:
+//     void deviceListChanged();
+//     void defaultDeviceChanged(bool isInput);
+//     void volumeChanged(bool isInput, float volume);
 
 private:
     // PIMPL pattern - pointer to implementation

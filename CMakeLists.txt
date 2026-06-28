@@ -1,31 +1,20 @@
-cmake_minimum_required(VERSION 3.30)
+cmake_minimum_required(VERSION 4.2)
 project(jakki VERSION 0.2.0 LANGUAGES CXX HOMEPAGE_URL https://github.com/Jan5u/jakki)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(SDL3)
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Svg)
+find_package(SDL3 REQUIRED)
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
-find_package(PkgConfig REQUIRED)
 find_package(nlohmann_json REQUIRED)
-find_package(Qt6Keychain REQUIRED)
-if(UNIX)
-    pkg_check_modules(PIPEWIRE REQUIRED libpipewire-0.3)
-    pkg_check_modules(LIBNOTIFY REQUIRED libnotify)
-    pkg_check_modules(AVFORMAT REQUIRED libavformat)
-    pkg_check_modules(AVCODEC REQUIRED libavcodec)
-    pkg_check_modules(AVUTIL REQUIRED libavutil)
-    pkg_check_modules(OPUS REQUIRED opus)
-    pkg_check_modules(GIO REQUIRED gio-2.0)
-    pkg_check_modules(ZSTD REQUIRED libzstd)
-elseif(WIN32)
-    find_package(FFMPEG REQUIRED)
-    find_package(Opus REQUIRED)
-    find_package(zstd CONFIG REQUIRED)
-endif()
 
-include_directories(${PIPEWIRE_INCLUDE_DIRS})
+if(UNIX)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(LIBSECRET REQUIRED IMPORTED_TARGET libsecret-1)
+    pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET libpipewire-0.3)
+    pkg_check_modules(OPUS REQUIRED IMPORTED_TARGET opus)
+endif()
 
 # Find glslc for compiling shaders
 find_program(GLSLC glslc)
@@ -48,9 +37,22 @@ function(compile_shader target shader_file)
     target_sources(${target} PRIVATE ${output_file})
 endfunction()
 
-
 set(COMMON_SOURCES
     src/main.cpp
+    src/network.hpp
+    src/network.cpp
+    src/auth.hpp
+    src/auth.cpp
+    src/gui.hpp
+    src/gui.cpp
+    src/audio/audio.hpp
+    src/audio/audio.cpp
+    src/audio/pipewire_impl.hpp
+    src/audio/pipewire_impl.cpp
+    src/audio/audio_impl.hpp
+    src/audio/audio_impl.cpp
+    src/config.hpp
+    src/config.cpp
 )
 
 add_executable(jakki
@@ -62,34 +64,28 @@ add_executable(jakki
     third_party/imgui/imgui_demo.cpp
     third_party/imgui/backends/imgui_impl_sdl3.cpp
     third_party/imgui/backends/imgui_impl_sdlrenderer3.cpp
+    third_party/imgui/misc/cpp/imgui_stdlib.cpp
 )
 target_include_directories(jakki PRIVATE
     third_party/imgui
     third_party/imgui/backends
+    third_party/imgui/misc/cpp
 )
-
-
-
-
-
-
-
-
 
 compile_shader(jakki ui/shaders/screen.vert)
 compile_shader(jakki ui/shaders/screen.frag)
 compile_shader(jakki ui/shaders/bgra_to_nv12.comp)
 
-target_link_libraries(jakki PRIVATE SDL3::SDL3 Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Svg Qt6Keychain::Qt6Keychain OpenSSL::SSL OpenSSL::Crypto nlohmann_json::nlohmann_json Threads::Threads)
+target_link_libraries(jakki PRIVATE SDL3::SDL3 OpenSSL::SSL OpenSSL::Crypto nlohmann_json::nlohmann_json PkgConfig::LIBSECRET PkgConfig::PIPEWIRE PkgConfig::OPUS Threads::Threads)
 
-if(WIN32)
-    set_target_properties(jakki PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)
-    target_link_libraries(jakki PRIVATE Opus::opus ${FFMPEG_LIBRARIES} zstd::libzstd)
-    add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD COMMAND Qt6::windeployqt --qmldir "${CMAKE_CURRENT_SOURCE_DIR}" "$<TARGET_FILE:${CMAKE_PROJECT_NAME}>" ) 
-elseif(UNIX)
-    target_link_libraries(jakki PRIVATE ${OPUS_LIBRARIES} ${PIPEWIRE_LIBRARIES} ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${LIBNOTIFY_LIBRARIES} ${GIO_LIBRARIES} ${ZSTD_LIBRARIES})
-    target_include_directories(jakki PRIVATE ${GIO_INCLUDE_DIRS})
-endif()
+# if(WIN32)
+#     set_target_properties(jakki PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)
+#     target_link_libraries(jakki PRIVATE Opus::opus ${FFMPEG_LIBRARIES} zstd::libzstd)
+#     add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD COMMAND Qt6::windeployqt --qmldir "${CMAKE_CURRENT_SOURCE_DIR}" "$<TARGET_FILE:${CMAKE_PROJECT_NAME}>" ) 
+# elseif(UNIX)
+#     target_link_libraries(jakki PRIVATE ${OPUS_LIBRARIES} ${PIPEWIRE_LIBRARIES} ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${LIBNOTIFY_LIBRARIES} ${GIO_LIBRARIES} ${ZSTD_LIBRARIES})
+#     target_include_directories(jakki PRIVATE ${GIO_INCLUDE_DIRS})
+# endif()
 
 install(TARGETS jakki
     BUNDLE  DESTINATION .
@@ -102,12 +98,6 @@ if(WIN32)
         file(INSTALL ${DLL_FILES} DESTINATION "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/bin")
     ]])
 endif()
-
-qt_generate_deploy_app_script(
-    TARGET jakki
-    OUTPUT_SCRIPT deploy_script
-)
-install(SCRIPT ${deploy_script})
 
 set(CPACK_PACKAGE_NAME "Jakki")
 set(CPACK_PACKAGE_VENDOR "Jakki")
