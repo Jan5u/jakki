@@ -76,7 +76,42 @@ compile_shader(jakki ui/shaders/screen.vert)
 compile_shader(jakki ui/shaders/screen.frag)
 compile_shader(jakki ui/shaders/bgra_to_nv12.comp)
 
-target_link_libraries(jakki PRIVATE SDL3::SDL3 OpenSSL::SSL OpenSSL::Crypto nlohmann_json::nlohmann_json PkgConfig::LIBSECRET PkgConfig::PIPEWIRE PkgConfig::OPUS Threads::Threads)
+
+include(ExternalProject)
+set(FFMPEG_INSTALL_DIR ${CMAKE_BINARY_DIR}/ffmpeg-install)
+
+ExternalProject_Add(ffmpeg
+    SOURCE_DIR ${CMAKE_SOURCE_DIR}/third_party/ffmpeg
+    BUILD_IN_SOURCE 1
+
+    CONFIGURE_COMMAND ./configure
+        --prefix=${FFMPEG_INSTALL_DIR}
+        --disable-programs
+        --disable-doc
+        --disable-all
+        --disable-autodetect
+        --disable-static
+        --enable-shared
+        --enable-avcodec
+        --enable-avformat
+        --enable-vulkan
+        --enable-hwaccel=av1_vulkan,h264_vulkan,hevc_vulkan
+        --enable-encoder=av1_vulkan,h264_vulkan,hevc_vulkan
+
+    BUILD_COMMAND make -j
+    INSTALL_COMMAND make install
+)
+
+target_link_libraries(jakki PRIVATE 
+    SDL3::SDL3
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    nlohmann_json::nlohmann_json
+    PkgConfig::LIBSECRET
+    PkgConfig::PIPEWIRE
+    PkgConfig::OPUS
+    Threads::Threads
+)
 
 # if(WIN32)
 #     set_target_properties(jakki PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)
