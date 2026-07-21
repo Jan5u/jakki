@@ -4,7 +4,6 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(SDL3 REQUIRED)
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(nlohmann_json REQUIRED)
@@ -101,6 +100,8 @@ ExternalProject_Add(ffmpeg
     BUILD_COMMAND make -j
     INSTALL_COMMAND make install
 )
+
+add_subdirectory(third_party/sdl)
 
 target_link_libraries(jakki PRIVATE 
     SDL3::SDL3
