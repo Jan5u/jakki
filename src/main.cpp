@@ -122,6 +122,14 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         ImGui::DockBuilderDockWindow("User", dock_id_left_bottom);
         ImGui::DockBuilderDockWindow("Users", dock_id_right);
         ImGui::DockBuilderFinish(dockspace_id);
+        auto SetNoTabBar = [](ImGuiID id) {
+            if (ImGuiDockNode *node = ImGui::DockBuilderGetNode(id))
+                node->LocalFlags |= ImGuiDockNodeFlags_NoTabBar;
+        };
+        SetNoTabBar(dock_id_left_top);
+        SetNoTabBar(dock_id_left_bottom);
+        SetNoTabBar(dock_id_main);
+        SetNoTabBar(dock_id_right);
     }
 
     ImGui::DockSpaceOverViewport(dockspace_id, viewport, ImGuiDockNodeFlags_PassthruCentralNode);
