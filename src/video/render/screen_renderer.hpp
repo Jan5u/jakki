@@ -17,10 +17,8 @@
 #endif
 
 extern "C" {
-#include <ffnvcodec/dynlink_loader.h>
 #include <libavutil/frame.h>
 #include <libavutil/hwcontext.h>
-#include <libavutil/hwcontext_cuda.h>
 #include <libavutil/hwcontext_vulkan.h>
 #include <libavutil/pixdesc.h>
 }
@@ -80,13 +78,6 @@ class ScreenRenderer : public QVulkanWindowRenderer {
     void transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout);
     void unlockVulkanFrameIfNeeded();
     bool ensureVideoResources(uint32_t width, uint32_t height);
-    bool ensureCudaLoader();
-    bool ensureCudaInterop(AVFrame *frame, VkDevice dev, CUcontext cuCtx);
-    void cleanupCudaInterop();
-    CudaFunctions *m_cu = nullptr;
-    CUexternalMemory m_cudaExternalMemory = nullptr;
-    CUstream m_cudaStream = nullptr;
-    CUdeviceptr m_cudaStagingPtr = 0;
     VkBuffer m_cudaStagingBuffer = VK_NULL_HANDLE;
     VkDeviceMemory m_cudaStagingMemory = VK_NULL_HANDLE;
     VkDeviceSize m_cudaStagingSize = 0;
