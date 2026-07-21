@@ -4,3 +4,6 @@
 [submodule "third_party/ffmpeg"]
 	path = third_party/ffmpeg
 	url = https://github.com/ffmpeg/ffmpeg
+[submodule "third_party/sdl"]
+	path = third_party/sdl
+	url = https://github.com/libsdl-org/SDL
