@@ -52,6 +52,8 @@ set(COMMON_SOURCES
     src/audio/audio_impl.cpp
     src/config.hpp
     src/config.cpp
+    src/video/video.hpp
+    src/video/video.cpp
 )
 
 add_executable(jakki
@@ -93,13 +95,28 @@ ExternalProject_Add(ffmpeg
         --enable-shared
         --enable-avcodec
         --enable-avformat
+        --enable-protocol=file
+        --enable-demuxer=mov
+        --enable-parser=h264,hevc,av1
         --enable-vulkan
         --enable-hwaccel=av1_vulkan,h264_vulkan,hevc_vulkan
         --enable-encoder=av1_vulkan,h264_vulkan,hevc_vulkan
-
+        
     BUILD_COMMAND make -j
     INSTALL_COMMAND make install
 )
+
+target_include_directories(jakki PRIVATE
+    ${FFMPEG_INSTALL_DIR}/include
+)
+
+target_link_directories(jakki PRIVATE
+    ${FFMPEG_INSTALL_DIR}/lib
+)
+
+add_dependencies(jakki ffmpeg)
+
+
 
 add_subdirectory(third_party/sdl)
 
@@ -112,6 +129,9 @@ target_link_libraries(jakki PRIVATE
     PkgConfig::PIPEWIRE
     PkgConfig::OPUS
     Threads::Threads
+    avcodec
+    avformat
+    avutil
 )
 
 # if(WIN32)

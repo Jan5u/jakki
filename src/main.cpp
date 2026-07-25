@@ -20,6 +20,7 @@
 #include "config.hpp"
 #include "gui.hpp"
 #include "audio/audio.hpp"
+#include "video/video.hpp"
 
 static int selectedChannel = -1;
 static int selectedUser = -1;
@@ -33,6 +34,7 @@ struct App {
     GUI gui;
     Config config;
     Audio audio{network, config};
+    Video video;
     std::string username = "jansu";
 };
 
@@ -44,18 +46,33 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
         return SDL_APP_FAILURE;
     }
     float main_scale = SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());
-    SDL_WindowFlags window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+    SDL_WindowFlags window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_VULKAN;
     app->window = SDL_CreateWindow("Jakki", (int)(1280 * main_scale), (int)(800 * main_scale), window_flags);
     if (app->window == nullptr) {
         printf("Error: SDL_CreateWindow(): %s\n", SDL_GetError());
         return SDL_APP_FAILURE;
     }
-    app->renderer = SDL_CreateRenderer(app->window, nullptr);
+
+
+    app->video.vulkan_context = app->video.CreateVulkanVideoContext(app->window);
+
+    SDL_PropertiesID props;
+    props = SDL_CreateProperties();
+    SDL_SetStringProperty(props, SDL_PROP_RENDERER_CREATE_NAME_STRING, "vulkan");
+    SDL_SetPointerProperty(props, SDL_PROP_RENDERER_CREATE_WINDOW_POINTER, app->window);
+    app->video.SetupVulkanRenderProperties(app->video.vulkan_context, props);
+    SDL_SetNumberProperty(props, SDL_PROP_RENDERER_CREATE_OUTPUT_COLORSPACE_NUMBER, SDL_COLORSPACE_SRGB);
+    app->renderer = SDL_CreateRendererWithProperties(props);
+    SDL_DestroyProperties(props);
+
+
+    // app->renderer = SDL_CreateRenderer(app->window, nullptr);
     SDL_SetRenderVSync(app->renderer, 1);
     if (app->renderer == nullptr) {
         SDL_Log("Error: SDL_CreateRenderer(): %s\n", SDL_GetError());
         return SDL_APP_FAILURE;
     }
+    app->video.renderer = app->renderer;
     SDL_SetWindowPosition(app->window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     SDL_ShowWindow(app->window);
 
@@ -97,6 +114,8 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
     ImGuiIO &io = ImGui::GetIO();
+
+    app->video.decodeLoop();
 
     bool show_demo_window = true;
     bool show_another_window = false;
@@ -140,6 +159,12 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Screenshare")) {
+            SDL_Texture *video_texture = app->video.GetTexture();
+            if (video_texture) {
+                ImGui::Image((ImTextureID)video_texture, ImVec2((float)app->video.GetTextureWidth(), (float)app->video.GetTextureHeight()));
+            } else {
+                ImGui::Text("No video texture");
+            }
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Debug")) {
