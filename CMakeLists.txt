@@ -7,12 +7,14 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(nlohmann_json REQUIRED)
+find_package(Vulkan REQUIRED)
 
 if(UNIX)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(LIBSECRET REQUIRED IMPORTED_TARGET libsecret-1)
     pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET libpipewire-0.3)
     pkg_check_modules(OPUS REQUIRED IMPORTED_TARGET opus)
+    pkg_check_modules(LIBPORTAL REQUIRED IMPORTED_TARGET libportal)
 endif()
 
 # Find glslc for compiling shaders
@@ -21,17 +23,19 @@ if(NOT GLSLC)
     message(FATAL_ERROR "glslc not found. Please install the Vulkan SDK.")
 endif()
 
-# Function to compile GLSL shaders to SPIR-V
 function(compile_shader target shader_file)
     get_filename_component(shader_name ${shader_file} NAME_WE)
     get_filename_component(shader_ext ${shader_file} EXT)
-    string(SUBSTRING ${shader_ext} 1 -1 ext_without_dot)
-    set(output_file "${CMAKE_CURRENT_SOURCE_DIR}/ui/shaders/${shader_name}_${ext_without_dot}.spv")
+    string(SUBSTRING ${shader_ext} 1 -1 shader_stage)
+    set(output_dir ${CMAKE_CURRENT_BINARY_DIR}/shaders)
+    file(MAKE_DIRECTORY ${output_dir})
+    set(output_file ${output_dir}/${shader_name}.${shader_stage}.spv)
     add_custom_command(
         OUTPUT ${output_file}
         COMMAND ${GLSLC} ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -o ${output_file}
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file}
-        COMMENT "Compiling shader: ${shader_file} -> ${shader_name}_${ext_without_dot}.spv"
+        COMMENT "Compiling ${shader_file}"
+        VERBATIM
     )
     target_sources(${target} PRIVATE ${output_file})
 endfunction()
@@ -54,6 +58,16 @@ set(COMMON_SOURCES
     src/config.cpp
     src/video/video.hpp
     src/video/video.cpp
+    src/video/encode/encoder.hpp
+    src/video/encode/encoder.cpp
+    src/video/encode/encoder_vulkan.hpp
+    src/video/encode/encoder_vulkan.cpp
+    src/video/capture/capture.hpp
+    src/video/capture/capture.cpp
+    src/video/capture/capture_linux.hpp
+    src/video/capture/capture_linux.cpp
+    src/portal.hpp
+    src/portal.cpp
 )
 
 add_executable(jakki
@@ -95,8 +109,6 @@ ExternalProject_Add(ffmpeg
         --enable-shared
         --enable-avcodec
         --enable-avformat
-        --enable-protocol=file
-        --enable-demuxer=mov
         --enable-parser=h264,hevc,av1
         --enable-vulkan
         --enable-hwaccel=av1_vulkan,h264_vulkan,hevc_vulkan
@@ -132,6 +144,8 @@ target_link_libraries(jakki PRIVATE
     avcodec
     avformat
     avutil
+    Vulkan::Vulkan
+    PkgConfig::LIBPORTAL
 )
 
 # if(WIN32)
@@ -146,6 +160,11 @@ target_link_libraries(jakki PRIVATE
 install(TARGETS jakki
     BUNDLE  DESTINATION .
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(
+    DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/shaders/
+    DESTINATION .
 )
 
 if(WIN32)

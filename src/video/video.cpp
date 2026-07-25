@@ -1,15 +1,9 @@
 #include "video.hpp"
 
-static constexpr const char *kVideoSourcePath = "../../test.mp4";
-
 Video::Video() {}
 
 Video::~Video() {
     releaseDecoder();
-    if (m_texture) {
-        SDL_DestroyTexture(m_texture);
-        m_texture = nullptr;
-    }
 }
 
 SDL_Texture *Video::GetTexture() const {
@@ -17,14 +11,31 @@ SDL_Texture *Video::GetTexture() const {
 }
 
 int Video::GetTextureWidth() const {
-    return m_textureWidth;
+    return static_cast<int>(m_textureWidth * (m_visibleUvRight - m_visibleUvLeft));
 }
 
 int Video::GetTextureHeight() const {
-    return m_textureHeight;
+    return static_cast<int>(m_textureHeight * (m_visibleUvBottom - m_visibleUvTop));
+}
+
+float Video::GetVisibleUvLeft() const {
+    return m_visibleUvLeft;
+}
+
+float Video::GetVisibleUvTop() const {
+    return m_visibleUvTop;
+}
+
+float Video::GetVisibleUvRight() const {
+    return m_visibleUvRight;
+}
+
+float Video::GetVisibleUvBottom() const {
+    return m_visibleUvBottom;
 }
 
 void Video::releaseDecoder() {
+    destroyTextureCache();
     if (m_frame) {
         av_frame_free(&m_frame);
     }
@@ -37,48 +48,36 @@ void Video::releaseDecoder() {
     if (m_formatContext) {
         avformat_close_input(&m_formatContext);
     }
+    if (m_parser) {
+        av_parser_close(m_parser);
+    }
     m_videoStreamIndex = -1;
+}
+
+void Video::destroyTextureCache() {
+    for (auto &entry : m_textureCache) {
+        if (entry.texture) {
+            SDL_DestroyTexture(entry.texture);
+        }
+    }
+    m_textureCache.clear();
+    m_texture = nullptr;
 }
 
 bool Video::ensureDecoder(SDL_Renderer *renderer) {
     if (m_codecContext) {
         return true;
     }
-
     (void)renderer;
-
     if (!vulkan_context) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Vulkan video context is not ready");
         return false;
     }
-
-    SDL_Log("Opening video source: %s", kVideoSourcePath);
-    if (avformat_open_input(&m_formatContext, kVideoSourcePath, NULL, NULL) < 0) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Couldn't open %s", kVideoSourcePath);
-        releaseDecoder();
-        return false;
-    }
-
-    if (avformat_find_stream_info(m_formatContext, NULL) < 0) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Couldn't read stream info from %s", kVideoSourcePath);
-        releaseDecoder();
-        return false;
-    }
-
-    const AVCodec *videoCodec = NULL;
-    m_videoStreamIndex = av_find_best_stream(m_formatContext, AVMEDIA_TYPE_VIDEO, -1, -1, &videoCodec, 0);
-    if (m_videoStreamIndex < 0 || !videoCodec) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Couldn't find a video stream in %s", kVideoSourcePath);
-        releaseDecoder();
-        return false;
-    }
-
-    m_codecContext = OpenVideoStream(m_formatContext, m_videoStreamIndex, videoCodec);
+    m_codecContext = OpenVideoStream(m_formatContext, m_videoStreamIndex);
     if (!m_codecContext) {
         releaseDecoder();
         return false;
     }
-
     m_packet = av_packet_alloc();
     m_frame = av_frame_alloc();
     if (!m_packet || !m_frame) {
@@ -86,7 +85,12 @@ bool Video::ensureDecoder(SDL_Renderer *renderer) {
         releaseDecoder();
         return false;
     }
-
+    m_parser = av_parser_init(AV_CODEC_ID_H264);
+    if (!m_parser) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create H.264 parser");
+        releaseDecoder();
+        return false;
+    }
     return true;
 }
 
@@ -210,21 +214,6 @@ static int addQueueFamily(VkDeviceQueueCreateInfo **pQueueCreateInfos, uint32_t 
     return 0;
 }
 
-static int loadDeviceFunctions(VulkanVideoContext *context) {
-#define VULKAN_GLOBAL_FUNCTION(name)
-#define VULKAN_INSTANCE_FUNCTION(name)
-#define VULKAN_DEVICE_FUNCTION(name)                                                                                                                 \
-    context->name = (PFN_##name)context->vkGetDeviceProcAddr(context->device, #name);                                                                \
-    if (!context->name) {                                                                                                                            \
-        return SDL_SetError("vkGetDeviceProcAddr(device, \"" #name "\") failed");                                                                    \
-    }
-    VULKAN_FUNCTIONS()
-#undef VULKAN_GLOBAL_FUNCTION
-#undef VULKAN_INSTANCE_FUNCTION
-#undef VULKAN_DEVICE_FUNCTION
-    return 0;
-}
-
 // Use the same queue scoring algorithm as ffmpeg to make sure we get the same device configuration
 static int selectQueueFamily(VkQueueFamilyProperties *queueFamiliesProperties, uint32_t queueFamiliesCount, VkQueueFlags flags, int *queueCount) {
     uint32_t queueFamilyIndex;
@@ -251,41 +240,6 @@ static int selectQueueFamily(VkQueueFamilyProperties *queueFamiliesProperties, u
         *queueCount = 0;
         return -1;
     }
-}
-
-static int loadGlobalFunctions(VulkanVideoContext *context) {
-    context->vkGetInstanceProcAddr = (PFN_vkGetInstanceProcAddr)SDL_Vulkan_GetVkGetInstanceProcAddr();
-    if (!context->vkGetInstanceProcAddr) {
-        return -1;
-    }
-
-#define VULKAN_GLOBAL_FUNCTION(name)                                                                                                                 \
-    context->name = (PFN_##name)context->vkGetInstanceProcAddr(VK_NULL_HANDLE, #name);                                                               \
-    if (!context->name) {                                                                                                                            \
-        return SDL_SetError("vkGetInstanceProcAddr(VK_NULL_HANDLE, \"" #name "\") failed");                                                          \
-    }
-#define VULKAN_INSTANCE_FUNCTION(name)
-#define VULKAN_DEVICE_FUNCTION(name)
-    VULKAN_FUNCTIONS()
-#undef VULKAN_GLOBAL_FUNCTION
-#undef VULKAN_INSTANCE_FUNCTION
-#undef VULKAN_DEVICE_FUNCTION
-    return 0;
-}
-
-static int loadInstanceFunctions(VulkanVideoContext *context) {
-#define VULKAN_GLOBAL_FUNCTION(name)
-#define VULKAN_INSTANCE_FUNCTION(name)                                                                                                               \
-    context->name = (PFN_##name)context->vkGetInstanceProcAddr(context->instance, #name);                                                            \
-    if (!context->name) {                                                                                                                            \
-        return SDL_SetError("vkGetInstanceProcAddr(instance, \"" #name "\") failed");                                                                \
-    }
-#define VULKAN_DEVICE_FUNCTION(name)
-    VULKAN_FUNCTIONS()
-#undef VULKAN_GLOBAL_FUNCTION
-#undef VULKAN_INSTANCE_FUNCTION
-#undef VULKAN_DEVICE_FUNCTION
-    return 0;
 }
 
 static const char *getVulkanResultString(VkResult result) {
@@ -349,9 +303,9 @@ static int createInstance(VulkanVideoContext *context) {
     // Get the rest of the optional extensions
     {
         uint32_t extensionCount;
-        if (context->vkEnumerateInstanceExtensionProperties(NULL, &extensionCount, NULL) == VK_SUCCESS && extensionCount > 0) {
+        if (vkEnumerateInstanceExtensionProperties(NULL, &extensionCount, NULL) == VK_SUCCESS && extensionCount > 0) {
             VkExtensionProperties *extensionProperties = (VkExtensionProperties *)SDL_calloc(extensionCount, sizeof(VkExtensionProperties));
-            if (context->vkEnumerateInstanceExtensionProperties(NULL, &extensionCount, extensionProperties) == VK_SUCCESS) {
+            if (vkEnumerateInstanceExtensionProperties(NULL, &extensionCount, extensionProperties) == VK_SUCCESS) {
                 for (uint32_t i = 0; i < SDL_arraysize(optional_extensions); ++i) {
                     for (uint32_t j = 0; j < extensionCount; ++j) {
                         if (SDL_strcmp(extensionProperties[j].extensionName, optional_extensions[i]) == 0) {
@@ -369,13 +323,10 @@ static int createInstance(VulkanVideoContext *context) {
     context->instanceExtensions = instanceExtensionsCopy;
     context->instanceExtensionsCount = instanceCreateInfo.enabledExtensionCount;
 
-    result = context->vkCreateInstance(&instanceCreateInfo, NULL, &context->instance);
+    result = vkCreateInstance(&instanceCreateInfo, NULL, &context->instance);
     if (result != VK_SUCCESS) {
         context->instance = VK_NULL_HANDLE;
         return SDL_SetError("vkCreateInstance(): %s", getVulkanResultString(result));
-    }
-    if (loadInstanceFunctions(context) < 0) {
-        return -1;
     }
     return 0;
 }
@@ -437,7 +388,7 @@ static int findPhysicalDevice(VulkanVideoContext *context) {
     uint32_t physicalDeviceIndex;
     VkResult result;
 
-    result = context->vkEnumeratePhysicalDevices(context->instance, &physicalDeviceCount, NULL);
+    result = vkEnumeratePhysicalDevices(context->instance, &physicalDeviceCount, NULL);
     if (result != VK_SUCCESS) {
         return SDL_SetError("vkEnumeratePhysicalDevices(): %s", getVulkanResultString(result));
     }
@@ -448,7 +399,7 @@ static int findPhysicalDevice(VulkanVideoContext *context) {
     if (!physicalDevices) {
         return -1;
     }
-    result = context->vkEnumeratePhysicalDevices(context->instance, &physicalDeviceCount, physicalDevices);
+    result = vkEnumeratePhysicalDevices(context->instance, &physicalDeviceCount, physicalDevices);
     if (result != VK_SUCCESS) {
         SDL_free(physicalDevices);
         return SDL_SetError("vkEnumeratePhysicalDevices(): %s", getVulkanResultString(result));
@@ -462,7 +413,7 @@ static int findPhysicalDevice(VulkanVideoContext *context) {
         uint32_t i;
 
         VkPhysicalDevice physicalDevice = physicalDevices[physicalDeviceIndex];
-        context->vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamiliesCount, NULL);
+        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamiliesCount, NULL);
         if (queueFamiliesCount == 0) {
             continue;
         }
@@ -476,7 +427,7 @@ static int findPhysicalDevice(VulkanVideoContext *context) {
                 return -1;
             }
         }
-        context->vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamiliesCount, queueFamiliesProperties);
+        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamiliesCount, queueFamiliesProperties);
 
         // Initialize timestampValidBits for scoring in selectQueueFamily
         for (queueFamilyIndex = 0; queueFamilyIndex < queueFamiliesCount; queueFamilyIndex++) {
@@ -495,7 +446,7 @@ static int findPhysicalDevice(VulkanVideoContext *context) {
                 context->graphicsQueueFamilyIndex = queueFamilyIndex;
             }
 
-            result = context->vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, queueFamilyIndex, context->surface, &supported);
+            result = vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, queueFamilyIndex, context->surface, &supported);
             if (result == VK_SUCCESS) {
                 if (supported) {
                     context->presentQueueFamilyIndex = queueFamilyIndex;
@@ -536,7 +487,7 @@ static int findPhysicalDevice(VulkanVideoContext *context) {
             continue;
         }
 
-        result = context->vkEnumerateDeviceExtensionProperties(physicalDevice, NULL, &deviceExtensionCount, NULL);
+        result = vkEnumerateDeviceExtensionProperties(physicalDevice, NULL, &deviceExtensionCount, NULL);
         if (result != VK_SUCCESS) {
             SDL_free(physicalDevices);
             SDL_free(queueFamiliesProperties);
@@ -556,7 +507,7 @@ static int findPhysicalDevice(VulkanVideoContext *context) {
                 return -1;
             }
         }
-        result = context->vkEnumerateDeviceExtensionProperties(physicalDevice, NULL, &deviceExtensionCount, deviceExtensions);
+        result = vkEnumerateDeviceExtensionProperties(physicalDevice, NULL, &deviceExtensionCount, deviceExtensions);
         if (result != VK_SUCCESS) {
             SDL_free(physicalDevices);
             SDL_free(queueFamiliesProperties);
@@ -598,6 +549,7 @@ static int createDevice(VulkanVideoContext *context) {
         VK_KHR_VIDEO_DECODE_H264_EXTENSION_NAME,
         VK_KHR_VIDEO_DECODE_H265_EXTENSION_NAME,
         VK_KHR_VIDEO_DECODE_AV1_EXTENSION_NAME,
+        VK_KHR_VIDEO_DECODE_VP9_EXTENSION_NAME,
         VK_KHR_VIDEO_MAINTENANCE_1_EXTENSION_NAME
     };
     VkDeviceCreateInfo deviceCreateInfo;
@@ -617,7 +569,7 @@ static int createDevice(VulkanVideoContext *context) {
 
     initDeviceFeatures(&supported_features);
     initDeviceFeatures(&context->features);
-    context->vkGetPhysicalDeviceFeatures2(context->physicalDevice, &supported_features.device_features);
+    vkGetPhysicalDeviceFeatures2(context->physicalDevice, &supported_features.device_features);
     copyDeviceFeatures(&supported_features, &context->features);
 
     SDL_zero(deviceCreateInfo);
@@ -637,9 +589,9 @@ static int createDevice(VulkanVideoContext *context) {
     // Get the rest of the optional extensions
     {
         uint32_t extensionCount;
-        if (context->vkEnumerateDeviceExtensionProperties(context->physicalDevice, NULL, &extensionCount, NULL) == VK_SUCCESS && extensionCount > 0) {
+        if (vkEnumerateDeviceExtensionProperties(context->physicalDevice, NULL, &extensionCount, NULL) == VK_SUCCESS && extensionCount > 0) {
             VkExtensionProperties *extensionProperties = (VkExtensionProperties *)SDL_calloc(extensionCount, sizeof(VkExtensionProperties));
-            if (context->vkEnumerateDeviceExtensionProperties(context->physicalDevice, NULL, &extensionCount, extensionProperties) == VK_SUCCESS) {
+            if (vkEnumerateDeviceExtensionProperties(context->physicalDevice, NULL, &extensionCount, extensionProperties) == VK_SUCCESS) {
                 for (uint32_t i = 0; i < SDL_arraysize(optional_extensions); ++i) {
                     for (uint32_t j = 0; j < extensionCount; ++j) {
                         if (SDL_strcmp(extensionProperties[j].extensionName, optional_extensions[i]) == 0) {
@@ -657,20 +609,14 @@ static int createDevice(VulkanVideoContext *context) {
     context->deviceExtensions = deviceExtensionsCopy;
     context->deviceExtensionsCount = deviceCreateInfo.enabledExtensionCount;
 
-    result = context->vkCreateDevice(context->physicalDevice, &deviceCreateInfo, NULL, &context->device);
+    result = vkCreateDevice(context->physicalDevice, &deviceCreateInfo, NULL, &context->device);
     if (result != VK_SUCCESS) {
         SDL_SetError("vkCreateDevice(): %s", getVulkanResultString(result));
         goto done;
     }
 
-    if (loadDeviceFunctions(context) < 0) {
-        result = VK_ERROR_UNKNOWN;
-        context->device = VK_NULL_HANDLE;
-        goto done;
-    }
-
     // Get the graphics queue that SDL will use
-    context->vkGetDeviceQueue(context->device, context->graphicsQueueFamilyIndex, 0, &context->graphicsQueue);
+    vkGetDeviceQueue(context->device, context->graphicsQueueFamilyIndex, 0, &context->graphicsQueue);
 
     // Create a command pool
     VkCommandPoolCreateInfo commandPoolCreateInfo;
@@ -678,7 +624,7 @@ static int createDevice(VulkanVideoContext *context) {
     commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     commandPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     commandPoolCreateInfo.queueFamilyIndex = context->graphicsQueueFamilyIndex;
-    result = context->vkCreateCommandPool(context->device, &commandPoolCreateInfo, NULL, &context->commandPool);
+    result = vkCreateCommandPool(context->device, &commandPoolCreateInfo, NULL, &context->commandPool);
     if (result != VK_SUCCESS) {
         SDL_SetError("vkCreateCommandPool(): %s", getVulkanResultString(result));
         goto done;
@@ -699,27 +645,27 @@ done:
 void DestroyVulkanVideoContext(VulkanVideoContext *context) {
     if (context) {
         if (context->device) {
-            context->vkDeviceWaitIdle(context->device);
+            vkDeviceWaitIdle(context->device);
         }
         SDL_free(context->instanceExtensions);
         SDL_free(context->deviceExtensions);
         if (context->commandBuffers) {
-            context->vkFreeCommandBuffers(context->device, context->commandPool, context->commandBufferCount, context->commandBuffers);
+            vkFreeCommandBuffers(context->device, context->commandPool, context->commandBufferCount, context->commandBuffers);
             SDL_free(context->commandBuffers);
             context->commandBuffers = NULL;
         }
         if (context->commandPool) {
-            context->vkDestroyCommandPool(context->device, context->commandPool, NULL);
+            vkDestroyCommandPool(context->device, context->commandPool, NULL);
             context->commandPool = VK_NULL_HANDLE;
         }
         if (context->device) {
-            context->vkDestroyDevice(context->device, NULL);
+            vkDestroyDevice(context->device, NULL);
         }
         if (context->surface) {
-            context->vkDestroySurfaceKHR(context->instance, context->surface, NULL);
+            vkDestroySurfaceKHR(context->instance, context->surface, NULL);
         }
         if (context->instance) {
-            context->vkDestroyInstance(context->instance, NULL);
+            vkDestroyInstance(context->instance, NULL);
         }
         SDL_free(context);
     }
@@ -730,7 +676,7 @@ VulkanVideoContext *Video::CreateVulkanVideoContext(SDL_Window *window) {
     if (!context) {
         return NULL;
     }
-    if (loadGlobalFunctions(context) < 0 || createInstance(context) < 0 || createSurface(context, window) < 0 || findPhysicalDevice(context) < 0 ||
+    if (createInstance(context) < 0 || createSurface(context, window) < 0 || findPhysicalDevice(context) < 0 ||
         createDevice(context) < 0) {
         DestroyVulkanVideoContext(context);
         return NULL;
@@ -852,17 +798,44 @@ bool Video::GetTextureForVulkanFrame(AVFrame *frame, SDL_Texture **texture) {
     SDL_PropertiesID props;
     float textureWidth = 0.0f;
     float textureHeight = 0.0f;
+    AVVkFrame *pVkFrame = (AVVkFrame *)frame->data[0];
+    VkImage image = pVkFrame->img[0];
+    SDL_Colorspace colorspace = GetFrameColorspace(frame);
 
-    if (m_texture) {
-        SDL_DestroyTexture(m_texture);
-        m_texture = nullptr;
+    m_texture = nullptr;
+    for (auto &entry : m_textureCache) {
+        if (entry.image != image) {
+            continue;
+        }
+        if (entry.colorspace != colorspace) {
+            SDL_DestroyTexture(entry.texture);
+            entry.texture = nullptr;
+        } else {
+            m_texture = entry.texture;
+        }
+        break;
     }
 
-    props = CreateVideoTextureProperties(frame, SDL_PIXELFORMAT_UNKNOWN, SDL_TEXTUREACCESS_STATIC);
-    m_texture = CreateVulkanVideoTexture(vulkan_context, frame, renderer, props);
-    SDL_DestroyProperties(props);
     if (!m_texture) {
-        return false;
+        props = CreateVideoTextureProperties(frame, SDL_PIXELFORMAT_UNKNOWN, SDL_TEXTUREACCESS_STATIC);
+        m_texture = CreateVulkanVideoTexture(vulkan_context, frame, renderer, props);
+        SDL_DestroyProperties(props);
+        if (!m_texture) {
+            return false;
+        }
+
+        bool cached = false;
+        for (auto &entry : m_textureCache) {
+            if (entry.image == image) {
+                entry.texture = m_texture;
+                entry.colorspace = colorspace;
+                cached = true;
+                break;
+            }
+        }
+        if (!cached) {
+            m_textureCache.push_back({image, m_texture, colorspace});
+        }
     }
 
     if (SDL_GetTextureSize(m_texture, &textureWidth, &textureHeight)) {
@@ -879,6 +852,22 @@ bool Video::GetTextureForVulkanFrame(AVFrame *frame, SDL_Texture **texture) {
             m_textureWidth = frame->width;
             m_textureHeight = frame->height;
         }
+    }
+
+    /* The decoded Vulkan image covers the coded (aligned) dimensions, e.g.
+       1920x1088 for a 1920x1080 stream. The frame crop fields describe the
+       visible picture inside that image, so record the visible region as UV
+       coordinates for the display to sample instead of the whole image. */
+    if (frame->hw_frames_ctx && frame->width > 0 && frame->height > 0) {
+        m_visibleUvLeft = static_cast<float>(frame->crop_left) / frame->width;
+        m_visibleUvTop = static_cast<float>(frame->crop_top) / frame->height;
+        m_visibleUvRight = 1.0f - static_cast<float>(frame->crop_right) / frame->width;
+        m_visibleUvBottom = 1.0f - static_cast<float>(frame->crop_bottom) / frame->height;
+    } else {
+        m_visibleUvLeft = 0.0f;
+        m_visibleUvTop = 0.0f;
+        m_visibleUvRight = 1.0f;
+        m_visibleUvBottom = 1.0f;
     }
 
     return true;
@@ -938,7 +927,7 @@ static void AddQueueFamily(AVVulkanDeviceContext *ctx, int idx, int num, VkQueue
 
 void SetupVulkanDeviceContextData(VulkanVideoContext *context, AVVulkanDeviceContext *ctx)
 {
-    ctx->get_proc_addr = context->vkGetInstanceProcAddr;
+    ctx->get_proc_addr = vkGetInstanceProcAddr;
     ctx->inst = context->instance;
     ctx->phys_dev = context->physicalDevice;
     ctx->act_dev = context->device;
@@ -953,15 +942,11 @@ void SetupVulkanDeviceContextData(VulkanVideoContext *context, AVVulkanDeviceCon
     AddQueueFamily(ctx, context->decodeQueueFamilyIndex, context->decodeQueueCount, VK_QUEUE_VIDEO_DECODE_BIT_KHR);
 }
 
-AVCodecContext *Video::OpenVideoStream(AVFormatContext *ic, int stream, const AVCodec *codec) { 
-    AVStream *st = ic->streams[stream];
-    AVCodecParameters *codecpar = st->codecpar;
+AVCodecContext *Video::OpenVideoStream(AVFormatContext *ic, int stream) { 
     AVCodecContext *context;
     const AVCodecHWConfig *config;
     int i;
     int result;
-
-    SDL_Log("Video stream: %s %dx%d", avcodec_get_name(codec->id), codecpar->width, codecpar->height);
 
     context = avcodec_alloc_context3(NULL);
     if (!context) {
@@ -969,18 +954,11 @@ AVCodecContext *Video::OpenVideoStream(AVFormatContext *ic, int stream, const AV
         return NULL;
     }
 
-    result = avcodec_parameters_to_context(context, ic->streams[stream]->codecpar);
-    if (result < 0) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "avcodec_parameters_to_context failed: %s", av_err2str(result));
-        avcodec_free_context(&context);
-        return NULL;
-    }
-    context->pkt_timebase = ic->streams[stream]->time_base;
+    decoder = avcodec_find_decoder(AV_CODEC_ID_H264);
 
-    /* Look for supported hardware accelerated configurations */
     i = 0;
     while (!context->hw_device_ctx &&
-           (config = avcodec_get_hw_config(codec, i++)) != NULL) {
+           (config = avcodec_get_hw_config(decoder, i++)) != NULL) {
 #if 0
         SDL_Log("Found %s hardware acceleration with pixel format %s", av_hwdevice_get_type_name(config->device_type), av_get_pix_fmt_name(config->pix_fmt));
 #endif
@@ -1037,15 +1015,7 @@ AVCodecContext *Video::OpenVideoStream(AVFormatContext *ic, int stream, const AV
     /* Allow supported hardware accelerated pixel formats */
     context->get_format = GetSupportedPixelFormat;
 
-    if (codecpar->codec_id == AV_CODEC_ID_VVC) {
-        context->strict_std_compliance = -2;
-
-        /* Enable threaded decoding, VVC decode is slow */
-        context->thread_count = SDL_GetNumLogicalCPUCores();
-        context->thread_type = (FF_THREAD_FRAME | FF_THREAD_SLICE);
-    }
-
-    result = avcodec_open2(context, codec, NULL);
+    result = avcodec_open2(context, decoder, NULL);
     if (result < 0) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Couldn't open codec %s: %s", avcodec_get_name(context->codec_id), av_err2str(result));
         avcodec_free_context(&context);
@@ -1053,61 +1023,94 @@ AVCodecContext *Video::OpenVideoStream(AVFormatContext *ic, int stream, const AV
     }
 
     return context;
- }
+}
 
- void Video::decodeLoop() {
-    if (!ensureDecoder(renderer)) {
+void Video::decodeLoop() {
+    if (!ensureDecoder(renderer))
         return;
-    }
-    
-    if (!flushing) {
-        result = av_read_frame(m_formatContext, m_packet);
-        if (result < 0) {
-            SDL_Log("End of stream, finishing decode");
-            if (m_codecContext) {
-                avcodec_flush_buffers(m_codecContext);
-            }
-            flushing = true;
-        } else {
-            if (m_packet->stream_index == m_videoStreamIndex) {
-                result = avcodec_send_packet(m_codecContext, m_packet);
-                if (result < 0) {
-                    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "avcodec_send_packet(m_codecContext) failed: %s", av_err2str(result));
-                }
-            }
-            av_packet_unref(m_packet);
-        }
-    }
-    decoded = false;
-    if (m_codecContext) {
-        while (avcodec_receive_frame(m_codecContext, m_frame) >= 0) {
-            double pts = ((double)m_frame->pts * m_codecContext->pkt_timebase.num) / m_codecContext->pkt_timebase.den;
-            if (first_pts < 0.0) {
-                first_pts = pts;
-            }
-            pts -= first_pts;
 
-            HandleVideoFrame(m_frame, pts);
+    auto drainFrames = [this]() {
+        while (true) {
+            int ret = avcodec_receive_frame(m_codecContext, m_frame);
+
+            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+                break;
+            }
+
+            if (ret < 0) {
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION,
+                    "avcodec_receive_frame failed: %s",
+                    av_err2str(ret));
+                break;
+            }
+
+            if (m_frame->colorspace == AVCOL_SPC_UNSPECIFIED) {
+                m_frame->colorspace = AVCOL_SPC_BT709;
+            }
+
+            if (m_frame->color_range == AVCOL_RANGE_UNSPECIFIED) {
+                m_frame->color_range = AVCOL_RANGE_MPEG;
+            }
+
+            DisplayVideoTexture(m_frame);
             decoded = true;
         }
-    }
-}
+    };
 
-void Video::HandleVideoFrame(AVFrame *frame, double pts) {
-    /* Quick and dirty PTS handling */
-    if (!video_start) {
-        video_start = SDL_GetTicks();
-    }
-    double now = (double)(SDL_GetTicks() - video_start) / 1000.0;
-    if (now < pts) {
-        SDL_DelayPrecise((Uint64)((pts - now) * SDL_NS_PER_SECOND));
-    }
+    while (true) {
+        std::vector<uint8_t> packetData;
+        {
+            std::lock_guard lock(queueMutex);
 
-    DisplayVideoFrame(frame);
-}
+            if (packetQueue.empty())
+                break;
 
-void Video::DisplayVideoFrame(AVFrame *frame) {
-    DisplayVideoTexture(frame);
+            packetData = std::move(packetQueue.front());
+            packetQueue.pop();
+        }
+
+        uint8_t *data = packetData.data();
+        int dataSize = static_cast<int>(packetData.size());
+
+        while (dataSize > 0) {
+            av_packet_unref(m_packet);
+            int consumed = av_parser_parse2(
+                m_parser,
+                m_codecContext,
+                &m_packet->data,
+                &m_packet->size,
+                data,
+                dataSize,
+                AV_NOPTS_VALUE,
+                AV_NOPTS_VALUE,
+                0
+            );
+
+            if (consumed < 0) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Parser error");
+                break;
+            }
+
+            data += consumed;
+            dataSize -= consumed;
+
+            if (m_packet->size == 0)
+                continue;
+
+            int ret = avcodec_send_packet(m_codecContext, m_packet);
+
+            if (ret == AVERROR(EAGAIN)) {
+                drainFrames();
+                ret = avcodec_send_packet(m_codecContext, m_packet);
+            }
+            if (ret < 0) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,"avcodec_send_packet failed: %s", av_err2str(ret));
+            }
+            av_packet_unref(m_packet);
+            drainFrames();
+        }
+    }
 }
 
 void Video::DisplayVideoTexture(AVFrame *frame) {
@@ -1170,7 +1173,7 @@ int Video::BeginVulkanFrameRendering(VulkanVideoContext *context, AVFrame *frame
         SDL_zero(beginInfo);
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         beginInfo.flags = 0;
-        context->vkBeginCommandBuffer(commandBuffer, &beginInfo);
+        vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
         VkImageMemoryBarrier2 barrier;
         SDL_zero(barrier);
@@ -1194,9 +1197,9 @@ int Video::BeginVulkanFrameRendering(VulkanVideoContext *context, AVFrame *frame
         dep.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
         dep.imageMemoryBarrierCount = 1;
         dep.pImageMemoryBarriers = &barrier;
-        context->vkCmdPipelineBarrier2(commandBuffer, &dep);
+        vkCmdPipelineBarrier2(commandBuffer, &dep);
 
-        context->vkEndCommandBuffer(commandBuffer);
+        vkEndCommandBuffer(commandBuffer);
 
         // Add the image barrier to the submit info
         submitInfo.commandBufferCount = 1;
@@ -1206,7 +1209,7 @@ int Video::BeginVulkanFrameRendering(VulkanVideoContext *context, AVFrame *frame
         pVkFrame->queue_family[0] = VK_QUEUE_FAMILY_IGNORED;
     }
 
-    VkResult result = context->vkQueueSubmit(context->graphicsQueue, 1, &submitInfo, 0);
+    VkResult result = vkQueueSubmit(context->graphicsQueue, 1, &submitInfo, 0);
     if (result != VK_SUCCESS) {
         // Don't return an error here, we need to complete the frame operation
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION , "vkQueueSubmit(): %s", getVulkanResultString(result));
@@ -1233,7 +1236,7 @@ int Video::CreateCommandBuffers(VulkanVideoContext *context, SDL_Renderer *rende
         commandBufferAllocateInfo.commandPool = context->commandPool;
         commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         commandBufferAllocateInfo.commandBufferCount = needed;
-        VkResult result = context->vkAllocateCommandBuffers(context->device, &commandBufferAllocateInfo, &context->commandBuffers[context->commandBufferCount]);
+        VkResult result = vkAllocateCommandBuffers(context->device, &commandBufferAllocateInfo, &context->commandBuffers[context->commandBufferCount]);
         if (result != VK_SUCCESS) {
             SDL_SetError("vkAllocateCommandBuffers(): %s", getVulkanResultString(result));
             return -1;
@@ -1272,7 +1275,7 @@ int Video::FinishVulkanFrameRendering(VulkanVideoContext *context, AVFrame *fram
     submitInfo.pSignalSemaphores = pVkFrame->sem;
     submitInfo.pNext = &timeline;
 
-    VkResult result = context->vkQueueSubmit(context->graphicsQueue, 1, &submitInfo, 0);
+    VkResult result = vkQueueSubmit(context->graphicsQueue, 1, &submitInfo, 0);
     if (result != VK_SUCCESS) {
         // Don't return an error here, we need to complete the frame operation
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "vkQueueSubmit(): %s", getVulkanResultString(result));
@@ -1283,4 +1286,14 @@ int Video::FinishVulkanFrameRendering(VulkanVideoContext *context, AVFrame *fram
     context->commandBufferIndex = (context->commandBufferIndex + 1) % context->commandBufferCount;
 
     return 0;
+}
+
+void Video::receiveEncodedPacket(const std::vector<uint8_t> &packet) {
+    std::lock_guard lock(queueMutex);
+    packetQueue.push(std::move(packet));
+}
+
+void Video::startScreenShare(const char *encoderName, int width, int height) {
+    auto encoder = CreateEncoder(Backend::Vulkan);
+    encoder->init(encoderName, width, height);
 }

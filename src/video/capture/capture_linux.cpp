@@ -1,5 +1,14 @@
 #include "capture_linux.hpp"
 
+namespace {
+
+const char *vulkanEncoderName(EncoderType encoderType) {
+    (void)encoderType;
+    return "h264_vulkan";
+}
+
+} // namespace
+
 PipewireCapture::PipewireCapture(Network* network) : m_network(network) {
     std::println("PipewireCapture initialized");
 }
@@ -10,15 +19,8 @@ bool PipewireCapture::isEncoderReady() const {
 
 PipewireCapture::~PipewireCapture() {
     stopCapture();
-    if (m_session_handle) {
-        g_free(m_session_handle);
-    }
-    if (m_screencast_proxy) {
-        g_object_unref(m_screencast_proxy);
-    }
-    if (m_connection) {
-        g_object_unref(m_connection);
-    }
+    delete encoder;
+    encoder = nullptr;
     if (m_pw_core) {
         pw_core_disconnect(m_pw_core);
     }
@@ -30,203 +32,26 @@ PipewireCapture::~PipewireCapture() {
     }
 }
 
-void PipewireCapture::initPortal() {
-    GError *error = nullptr;
-    m_connection = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error);
-    if (error) {
-        std::println(stderr, "Failed to connect to session bus: {}", error->message);
-        g_error_free(error);
-        return;
-    }
-
-    m_screencast_proxy = g_dbus_proxy_new_sync(
-        m_connection,
-        G_DBUS_PROXY_FLAGS_NONE,
-        nullptr,
-        "org.freedesktop.portal.Desktop",
-        "/org/freedesktop/portal/desktop",
-        "org.freedesktop.portal.ScreenCast",
-        nullptr,
-        &error
-    );
-
-    if (error) {
-        std::println(stderr, "Failed to create ScreenCast proxy: {}", error->message);
-        g_error_free(error);
-        if (m_connection) {
-            g_object_unref(m_connection);
-            m_connection = nullptr;
-        }
-        return;
-    }
-
-    std::println("XDG Desktop Portal ScreenCast interface initialized successfully");
-}
-
 void PipewireCapture::selectScreen() {
-    if (!m_screencast_proxy) {
-        initPortal();
-    }
-    if (!m_screencast_proxy) {
-        std::println(stderr, "ScreenCast proxy not initialized");
+    if (m_sourcesSelected) {
         return;
     }
-    static int request_counter = 0;
-    char token[64];
-    snprintf(token, sizeof(token), "jakki_token_%d_%ld", ++request_counter, time(nullptr));
-    
-    char sender_name[256];
-    strncpy(sender_name, g_dbus_connection_get_unique_name(m_connection) + 1, sizeof(sender_name) - 1);
-    for (char *p = sender_name; *p; p++) {
-        if (*p == '.') *p = '_';
-    }
-    
-    char request_path[512];
-    snprintf(request_path, sizeof(request_path), "/org/freedesktop/portal/desktop/request/%s/%s", sender_name, token);
-
-    g_dbus_connection_signal_subscribe(
-        m_connection,
-        "org.freedesktop.portal.Desktop",
-        "org.freedesktop.portal.Request",
-        "Response",
-        request_path,
-        nullptr,
-        G_DBUS_SIGNAL_FLAGS_NO_MATCH_RULE,
-        onCreateSessionResponse,
-        this,
-        nullptr
-    );
-
-    GVariantBuilder options_builder;
-    g_variant_builder_init(&options_builder, G_VARIANT_TYPE_VARDICT);
-    g_variant_builder_add(&options_builder, "{sv}", "handle_token", g_variant_new_string(token));
-    g_variant_builder_add(&options_builder, "{sv}", "session_handle_token", g_variant_new_string(token));
-
-    GError *error = nullptr;
-    GVariant *result = g_dbus_proxy_call_sync(
-        m_screencast_proxy,
-        "CreateSession",
-        g_variant_new("(a{sv})", &options_builder),
-        G_DBUS_CALL_FLAGS_NONE,
-        -1,
-        nullptr,
-        &error
-    );
-
-    if (error) {
-        std::println(stderr, "CreateSession failed: {}", error->message);
-        g_error_free(error);
+    if (m_portal_thread.joinable()) {
         return;
     }
 
-    if (result) {
-        g_variant_unref(result);
-    }
-
-    std::println("CreateSession called, waiting for response...");
+    m_portal_thread = std::jthread([self = this]() { self->openPortalOnThread(); });
 }
 
-void PipewireCapture::onCreateSessionResponse(GDBusConnection *connection, const char *sender_name,
-                                          const char *object_path, const char *interface_name,
-                                          const char *signal_name, GVariant *parameters,
-                                          gpointer user_data) {
-    auto *self = static_cast<PipewireCapture*>(user_data);
-    
-    guint32 response;
-    GVariant *results;
-    g_variant_get(parameters, "(u@a{sv})", &response, &results);
-    if (response != 0) {
-        std::println(stderr, "CreateSession failed with response code: {}", response);
-        g_variant_unref(results);
+void PipewireCapture::openPortalOnThread() {
+    if (!m_portal.openScreenCastPortal(m_portal_node_id, m_pipewire_fd)) {
+        std::println(stderr, "Failed to open screencast portal");
         return;
     }
 
-    GVariant *session_handle_variant = g_variant_lookup_value(results, "session_handle", G_VARIANT_TYPE_STRING);
-    if (session_handle_variant) {
-        self->m_session_handle = g_strdup(g_variant_get_string(session_handle_variant, nullptr));
-        std::println("Session created: {}", self->m_session_handle);
-        g_variant_unref(session_handle_variant);
-    }
-    g_variant_unref(results);
-
-    static int request_counter = 0;
-    char token[64];
-    snprintf(token, sizeof(token), "jakki_select_%d_%ld", ++request_counter, time(nullptr));
-    
-    char sender_name_clean[256];
-    strncpy(sender_name_clean, g_dbus_connection_get_unique_name(connection) + 1, sizeof(sender_name_clean) - 1);
-    for (char *p = sender_name_clean; *p; p++) {
-        if (*p == '.') *p = '_';
-    }
-    
-    char request_path[512];
-    snprintf(request_path, sizeof(request_path), "/org/freedesktop/portal/desktop/request/%s/%s", sender_name_clean, token);
-
-    g_dbus_connection_signal_subscribe(
-        connection,
-        "org.freedesktop.portal.Desktop",
-        "org.freedesktop.portal.Request",
-        "Response",
-        request_path,
-        nullptr,
-        G_DBUS_SIGNAL_FLAGS_NO_MATCH_RULE,
-        onSelectSourcesResponse,
-        self,
-        nullptr
-    );
-
-    GVariantBuilder options_builder;
-    g_variant_builder_init(&options_builder, G_VARIANT_TYPE_VARDICT);
-    g_variant_builder_add(&options_builder, "{sv}", "handle_token", g_variant_new_string(token));
-    g_variant_builder_add(&options_builder, "{sv}", "types", g_variant_new_uint32(1 | 2)); // Monitor and Window
-    g_variant_builder_add(&options_builder, "{sv}", "multiple", g_variant_new_boolean(FALSE));
-    g_variant_builder_add(&options_builder, "{sv}", "cursor_mode", g_variant_new_uint32(2)); // enable cursor
-
-    GError *error = nullptr;
-    GVariant *result = g_dbus_proxy_call_sync(
-        self->m_screencast_proxy,
-        "SelectSources",
-        g_variant_new("(oa{sv})", self->m_session_handle, &options_builder),
-        G_DBUS_CALL_FLAGS_NONE,
-        -1,
-        nullptr,
-        &error
-    );
-
-    if (error) {
-        std::println(stderr, "SelectSources failed: {}", error->message);
-        g_error_free(error);
-        return;
-    }
-
-    if (result) {
-        g_variant_unref(result);
-    }
-
-    std::println("SelectSources called, waiting for user selection...");
-}
-
-void PipewireCapture::onSelectSourcesResponse(GDBusConnection *connection, const char *sender_name,
-                                         const char *interface_name, const char *signal_name,
-                                         const char *object_path, GVariant *parameters,
-                                         gpointer user_data) {
-    auto *self = static_cast<PipewireCapture*>(user_data);
-    
-    guint32 response;
-    GVariant *results;
-    g_variant_get(parameters, "(u@a{sv})", &response, &results);
-    if (response != 0) {
-        std::println(stderr, "SelectSources cancelled or failed with response code: {}", response);
-        g_variant_unref(results);
-        return;
-    }
-    g_variant_unref(results);
-
-    self->m_sourcesSelected = true;
-    if (self->m_startRequested) {
-        self->startPortalStream();
-    } else {
-        std::println("Sources selected, start deferred until capture is requested");
+    m_sourcesSelected = true;
+    if (m_startRequested) {
+        startPortalStream();
     }
 }
 
@@ -248,47 +73,23 @@ void PipewireCapture::startEncoding(EncoderType encoderType) {
         return;
     }
 
-    auto newEncoder = DmaBufEncoder::create(encoderType, m_network);
-    if (newEncoder) {
-        newEncoder->init();
+    delete encoder;
+    encoder = new VulkanEncoder(m_network);
+    if (encoder) {
+        encoder->init(vulkanEncoderName(encoderType), pwdata.format.info.raw.size.width, pwdata.format.info.raw.size.height);
     }
-    if (newEncoder && newEncoder->isReady()) {
-        encoder = std::move(newEncoder);
+    if (encoder && encoder->isReady()) {
         m_encoderReady.store(true, std::memory_order_release);
-    }
-}
-
-void PipewireCapture::stopPortalSession() {
-    if (!m_connection || !m_session_handle) {
-        return;
-    }
-
-    GError *error = nullptr;
-    g_dbus_connection_call_sync(
-        m_connection,
-        "org.freedesktop.portal.Desktop",
-        m_session_handle,
-        "org.freedesktop.portal.Session",
-        "Close",
-        nullptr,
-        nullptr,
-        G_DBUS_CALL_FLAGS_NONE,
-        -1,
-        nullptr,
-        &error
-    );
-
-    if (error) {
-        std::println(stderr, "Failed to close portal session: {}", error->message);
-        g_error_free(error);
+        std::println("Encoder ready ({} {}x{})", encoder->getName(), pwdata.format.info.raw.size.width, pwdata.format.info.raw.size.height);
     } else {
-        std::println("Portal session closed");
+        std::println(stderr, "Encoder failed to initialize - frames will be dropped");
+        delete encoder;
+        encoder = nullptr;
     }
 }
 
 void PipewireCapture::stopCapture() {
     m_startRequested = false;
-    m_sourcesSelected = false;
     m_captureStarted = false;
 
     if (pwdata.loop) {
@@ -299,122 +100,36 @@ void PipewireCapture::stopCapture() {
         m_pipewire_thread.request_stop();
         m_pipewire_thread.join();
     }
-
-    stopPortalSession();
-
-    if (m_session_handle) {
-        g_free(m_session_handle);
-        m_session_handle = nullptr;
+    if (m_portal_thread.joinable()) {
+        m_portal_thread.join();
     }
+
+    m_sourcesSelected = false;
+    m_portal.close();
     if (m_pipewire_fd >= 0) {
         close(m_pipewire_fd);
         m_pipewire_fd = -1;
     }
 
+    delete encoder;
+    encoder = nullptr;
+
     m_encoderReady.store(false, std::memory_order_release);
 }
 
 void PipewireCapture::startPortalStream() {
+    std::lock_guard lock(m_mutex);
     if (m_captureStarted) {
         return;
     }
-    if (!m_connection || !m_screencast_proxy || !m_session_handle) {
-        std::println(stderr, "Cannot start capture: session not initialized");
+    if (m_pipewire_fd < 0) {
+        std::println(stderr, "Cannot start capture: PipeWire remote is not open");
         return;
     }
 
     m_captureStarted = true;
     m_startRequested = false;
-
-    static int request_counter = 0;
-    char token[64];
-    snprintf(token, sizeof(token), "jakki_start_%d_%ld", ++request_counter, time(nullptr));
-
-    char sender_name_clean[256];
-    strncpy(sender_name_clean, g_dbus_connection_get_unique_name(m_connection) + 1, sizeof(sender_name_clean) - 1);
-    for (char *p = sender_name_clean; *p; p++) {
-        if (*p == '.') *p = '_';
-    }
-
-    char request_path[512];
-    snprintf(request_path, sizeof(request_path), "/org/freedesktop/portal/desktop/request/%s/%s", sender_name_clean, token);
-
-    g_dbus_connection_signal_subscribe(
-        m_connection,
-        "org.freedesktop.portal.Desktop",
-        "org.freedesktop.portal.Request",
-        "Response",
-        request_path,
-        nullptr,
-        G_DBUS_SIGNAL_FLAGS_NO_MATCH_RULE,
-        onStartResponse,
-        this,
-        nullptr
-    );
-
-    GVariantBuilder options_builder;
-    g_variant_builder_init(&options_builder, G_VARIANT_TYPE_VARDICT);
-    g_variant_builder_add(&options_builder, "{sv}", "handle_token", g_variant_new_string(token));
-
-    GError *error = nullptr;
-    GVariant *result = g_dbus_proxy_call_sync(
-        m_screencast_proxy,
-        "Start",
-        g_variant_new("(osa{sv})", m_session_handle, "", &options_builder),
-        G_DBUS_CALL_FLAGS_NONE,
-        -1,
-        nullptr,
-        &error
-    );
-
-    if (error) {
-        std::println(stderr, "Start failed: {}", error->message);
-        g_error_free(error);
-        m_captureStarted = false;
-        return;
-    }
-
-    if (result) {
-        g_variant_unref(result);
-    }
-
-    std::println("Start called, waiting for stream information...");
-}
-
-void PipewireCapture::onStartResponse(GDBusConnection *connection, const char *sender_name,
-                                 const char *object_path, const char *interface_name,
-                                 const char *signal_name, GVariant *parameters,
-                                 gpointer user_data) {
-    auto *self = static_cast<PipewireCapture *>(user_data);
-
-    guint32 response;
-    GVariant *results;
-    g_variant_get(parameters, "(u@a{sv})", &response, &results);
-
-    if (response != 0) {
-        std::println(stderr, "Start failed with response code: {}", response);
-        g_variant_unref(results);
-        return;
-    }
-
-    GVariant *streams_variant = g_variant_lookup_value(results, "streams", G_VARIANT_TYPE("a(ua{sv})"));
-    if (streams_variant) {
-        GVariantIter iter;
-        g_variant_iter_init(&iter, streams_variant);
-        guint32 node_id;
-        GVariant *stream_properties;
-        while (g_variant_iter_next(&iter, "(u@a{sv})", &node_id, &stream_properties)) {
-            self->m_portal_node_id = node_id;
-            self->openPipewireRemote();
-            if (self->m_pipewire_fd >= 0) {
-                self->m_pipewire_thread = std::jthread([self]() { self->createPipewireNode(); });
-            }
-            g_variant_unref(stream_properties);
-        }
-        g_variant_unref(streams_variant);
-    }
-    g_variant_unref(results);
-    std::println("Screen selection complete!");
+    m_pipewire_thread = std::jthread([self = this]() { self->createPipewireNode(); });
 }
 
 static void on_process(void *userdata) {
@@ -441,25 +156,21 @@ static void on_process(void *userdata) {
     if (d->type == SPA_DATA_MemFd) {
         std::println("  type: MemFd (fd={})", d->fd);
     } else if (d->type == SPA_DATA_DmaBuf) {
-        std::println("  type: DMA-BUF (fd={})", d->fd);
-        
         int width = data->format.info.raw.size.width;
         int height = data->format.info.raw.size.height;
         int stride = width * 4;
-        
+
         if (d->maxsize > 0 && height > 0) {
             stride = d->maxsize / height;
-        } else {
-            std::println("  Using calculated stride: {}", stride);
         }
-        
+
         uint64_t modifier = data->format.info.raw.modifier;
         if (modifier == 0) {
             modifier = DRM_FORMAT_MOD_LINEAR;
         }
 
         if (self->isEncoderReady() && self->encoder) {
-            self->encoder->encodeDmaBufFrame(d->fd, width, height, stride, modifier);
+            const bool ok = self->encoder->encodeDmaBufFrame(d->fd, width, height, stride, modifier);
         }
     } else if (d->type == SPA_DATA_MemPtr) {
         std::println("  type: MemPtr (data={})", (void *)d->data);
@@ -492,58 +203,10 @@ static void on_param_changed(void *userdata, uint32_t id, const struct spa_pod *
         return;
 
     std::println("res: {}x{} format: {} mod: {}", data->format.info.raw.size.width, data->format.info.raw.size.height, uint8_t(data->format.info.raw.format), data->format.info.raw.modifier);
-}
 
-void PipewireCapture::openPipewireRemote() {
-    if (!m_session_handle) {
-        std::println(stderr, "No session handle available");
-        return;
+    if (!self->isEncoderReady()) {
+        self->startEncoding(static_cast<EncoderType>(0));
     }
-
-    GError *error = nullptr;
-    GVariantBuilder options_builder;
-    g_variant_builder_init(&options_builder, G_VARIANT_TYPE_VARDICT);
-
-    GUnixFDList *fd_list = nullptr;
-    
-    GVariant *result = g_dbus_proxy_call_with_unix_fd_list_sync(
-        m_screencast_proxy,
-        "OpenPipeWireRemote",
-        g_variant_new("(oa{sv})", m_session_handle, &options_builder),
-        G_DBUS_CALL_FLAGS_NONE,
-        -1,
-        nullptr,
-        &fd_list,
-        nullptr,
-        &error
-    );
-
-    if (error) {
-        std::println(stderr, "OpenPipeWireRemote failed: {}", error->message);
-        g_error_free(error);
-        return;
-    }
-
-    if (fd_list) {
-        gint32 fd_index;
-        g_variant_get(result, "(h)", &fd_index);
-        m_pipewire_fd = g_unix_fd_list_get(fd_list, fd_index, &error);
-        
-        if (error) {
-            std::println(stderr, "Failed to get FD: {}", error->message);
-            g_error_free(error);
-            g_object_unref(fd_list);
-            g_variant_unref(result);
-            return;
-        }
-        
-        std::println("OpenPipeWireRemote successful, FD: {}", m_pipewire_fd);
-        g_object_unref(fd_list);
-    } else {
-        std::println(stderr, "No file descriptor list returned");
-    }
-
-    g_variant_unref(result);
 }
 
 void PipewireCapture::createPipewireNode() {

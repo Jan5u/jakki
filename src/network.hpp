@@ -24,6 +24,7 @@
 class Auth;
 class GUI;
 class Audio;
+class Video;
 
 using json = nlohmann::json;
 
@@ -36,14 +37,15 @@ class Network {
         void setAuthManager(Auth* auth);
         void setGUI(GUI* gui);
         void setAudio(Audio* audio);
+        void setVideo(Video* video);
 
         // void disconnectQUIC();
         void sendVoicePackets(std::vector<uint8_t> encodedData);
+        void sendScreensharePackets(std::vector<uint8_t> encodedData);
         void joinVoiceChannel(const std::string& channelName);
         void leaveVoiceChannel();
         // bool isInVoiceChannel() const { return inVoiceChannel; }
-        // void joinScreenShare(QString userName);
-        // void sendScreensharePackets(std::vector<uint8_t> encodedData);
+        void joinScreenShare(std::string userName);
         // bool isConnected() const { return connected; }
         // void sendAdminMessage(const QString& requestType);
         // void sendTextMessage(const QString& jsonMessage);
@@ -85,7 +87,7 @@ class Network {
         void sendHeartbeat();
         void receiveEventPackets();
         void receiveVoicePackets();
-        // void receiveScreensharePackets();
+        void receiveScreensharePackets();
         void handleEventMessage(std::string msg); 
         bool performAuthentication();
         static BIO *create_socket_bio(const char *hostname, const char *port, int family, BIO_ADDR **peer_addr);
@@ -93,6 +95,7 @@ class Network {
         Auth* authManager = nullptr;
         GUI* gui = nullptr;
         Audio* audio = nullptr;
+        Video* video = nullptr;
         // Video* videoManager = nullptr;
         bool inVoiceChannel = false;
 };

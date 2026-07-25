@@ -21,6 +21,7 @@
 #include "gui.hpp"
 #include "audio/audio.hpp"
 #include "video/video.hpp"
+#include "video/capture/capture_linux.hpp"
 
 static int selectedChannel = -1;
 static int selectedUser = -1;
@@ -35,6 +36,7 @@ struct App {
     Config config;
     Audio audio{network, config};
     Video video;
+    std::unique_ptr<PipewireCapture> screenshareCapture;
     std::string username = "jansu";
 };
 
@@ -95,6 +97,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
     app->network.setAuthManager(&app->auth);
     app->network.setGUI(&app->gui);
     app->network.setAudio(&app->audio);
+    app->network.setVideo(&app->video);
     app->auth.setUsername(app->username);
 
     *appstate = app.release();
@@ -161,7 +164,10 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         if (ImGui::BeginTabItem("Screenshare")) {
             SDL_Texture *video_texture = app->video.GetTexture();
             if (video_texture) {
-                ImGui::Image((ImTextureID)video_texture, ImVec2((float)app->video.GetTextureWidth(), (float)app->video.GetTextureHeight()));
+                ImGui::Image((ImTextureID)video_texture,
+                             ImVec2((float)app->video.GetTextureWidth(), (float)app->video.GetTextureHeight()),
+                             ImVec2(app->video.GetVisibleUvLeft(), app->video.GetVisibleUvTop()),
+                             ImVec2(app->video.GetVisibleUvRight(), app->video.GetVisibleUvBottom()));
             } else {
                 ImGui::Text("No video texture");
             }
@@ -204,6 +210,14 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     ImGui::Begin("User");
     if (ImGui::Button("Connect")) {
         ImGui::OpenPopup("Connect to Server");
+    }
+    if (ImGui::Button("joinScreenShare")) {
+        app->network.joinScreenShare("jansu");
+    }
+    if (ImGui::Button("startScreenShare")) {
+        app->screenshareCapture = std::make_unique<PipewireCapture>(&app->network);
+        app->screenshareCapture->selectScreen();
+        app->screenshareCapture->startCapture();
     }
     if (ImGui::BeginPopupModal("Connect to Server", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Address");

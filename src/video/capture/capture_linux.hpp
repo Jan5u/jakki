@@ -2,19 +2,20 @@
 
 #include "capture.hpp"
 #include "../encode/encoder.hpp"
+#include "../encode/encoder_vulkan.hpp"
 
 #include <memory>
 #include <print>
 #include <thread>
 #include <atomic>
+#include <mutex>
+#include <cstdlib>
 
 #include <libdrm/drm_fourcc.h>
 
-class Network;
+#include "../../portal.hpp"
 
-#undef signals
-#include <gio/gio.h>
-#define signals Q_SIGNALS
+class Network;
 
 #include <pipewire/pipewire.h>
 #include <spa/debug/types.h>
@@ -39,29 +40,23 @@ public:
     void stopCapture() override;
     bool isEncoderReady() const;
     PipewireData pwdata;
-    std::unique_ptr<DmaBufEncoder> encoder;
+    VulkanEncoder *encoder = nullptr;
 
 private:
-    void initPortal();
-    GDBusConnection *m_connection = nullptr;
-    GDBusProxy *m_screencast_proxy = nullptr;
-    char *m_session_handle = nullptr;
-    uint32_t m_portal_node_id;
+    uint32_t m_portal_node_id = 0;
+    Portal m_portal;
     
-    static void onCreateSessionResponse(GDBusConnection *connection, const char *sender_name, const char *object_path, const char *interface_name, const char *signal_name, GVariant *parameters, gpointer user_data);
-    static void onSelectSourcesResponse(GDBusConnection *connection, const char *sender_name, const char *interface_name, const char *signal_name, const char *object_path, GVariant *parameters, gpointer user_data);
-    static void onStartResponse(GDBusConnection *connection, const char *sender_name, const char *object_path, const char *interface_name, const char *signal_name, GVariant *parameters, gpointer user_data);
-
     void createPipewireNode();
-    void openPipewireRemote();
     void startPortalStream();
-    void stopPortalSession();
+    void openPortalOnThread();
     std::jthread m_pipewire_thread;
+    std::jthread m_portal_thread;
+    std::mutex m_mutex;
 
     Network* m_network = nullptr;
-    bool m_sourcesSelected = false;
-    bool m_startRequested = false;
-    bool m_captureStarted = false;
+    std::atomic<bool> m_sourcesSelected{false};
+    std::atomic<bool> m_startRequested{false};
+    std::atomic<bool> m_captureStarted{false};
     std::atomic<bool> m_encoderReady{false};
 
     int m_pipewire_fd = -1;
