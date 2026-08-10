@@ -14,7 +14,6 @@ if(UNIX)
     pkg_check_modules(LIBSECRET REQUIRED IMPORTED_TARGET libsecret-1)
     pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET libpipewire-0.3)
     pkg_check_modules(OPUS REQUIRED IMPORTED_TARGET opus)
-    pkg_check_modules(LIBPORTAL REQUIRED IMPORTED_TARGET libportal)
 endif()
 
 # Find glslc for compiling shaders
@@ -128,9 +127,49 @@ target_link_directories(jakki PRIVATE
 
 add_dependencies(jakki ffmpeg)
 
+set(LIBPORTAL_INSTALL_DIR ${CMAKE_BINARY_DIR}/libportal-install)
+
+ExternalProject_Add(libportal
+    SOURCE_DIR ${CMAKE_SOURCE_DIR}/third_party/libportal
+    BUILD_IN_SOURCE 0
+
+    CONFIGURE_COMMAND meson setup
+        <BINARY_DIR>
+        <SOURCE_DIR>
+        --prefix=${LIBPORTAL_INSTALL_DIR}
+        --libdir=lib
+        --buildtype=release
+        -Dtests=false
+        -Dvapi=false
+        -Dintrospection=false
+        -Ddocs=false
+        -Dbackend-gtk3=disabled
+        -Dbackend-gtk4=disabled
+        -Dbackend-qt5=disabled
+        -Dbackend-qt6=disabled
+
+    BUILD_COMMAND meson compile -C <BINARY_DIR>
+    INSTALL_COMMAND meson install -C <BINARY_DIR>
+)
+
+target_include_directories(jakki PRIVATE
+    ${LIBPORTAL_INSTALL_DIR}/include
+)
+
+target_link_directories(jakki PRIVATE
+    ${LIBPORTAL_INSTALL_DIR}/lib
+)
+
+add_dependencies(jakki libportal)
+
 
 
 add_subdirectory(third_party/sdl)
+
+install(TARGETS SDL3-shared
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin
+)
 
 target_link_libraries(jakki PRIVATE 
     SDL3::SDL3
@@ -145,7 +184,7 @@ target_link_libraries(jakki PRIVATE
     avformat
     avutil
     Vulkan::Vulkan
-    PkgConfig::LIBPORTAL
+    portal
 )
 
 # if(WIN32)
@@ -157,14 +196,40 @@ target_link_libraries(jakki PRIVATE
 #     target_include_directories(jakki PRIVATE ${GIO_INCLUDE_DIRS})
 # endif()
 
+set_target_properties(jakki PROPERTIES
+    INSTALL_RPATH "$ORIGIN/../lib"
+)
+
 install(TARGETS jakki
     BUNDLE  DESTINATION .
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
 install(
+    FILES ${CMAKE_SOURCE_DIR}/jakki.desktop
+    DESTINATION share/applications
+)
+
+install(
+    FILES ${CMAKE_SOURCE_DIR}/ui/images/icon-256.png
+    DESTINATION share/icons/hicolor/256x256/apps
+)
+
+install(
     DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/shaders/
-    DESTINATION .
+    DESTINATION share/jakki/shaders
+)
+
+install(
+    DIRECTORY ${FFMPEG_INSTALL_DIR}/lib/
+    DESTINATION lib
+    FILES_MATCHING PATTERN "*.so*"
+)
+
+install(
+    DIRECTORY ${LIBPORTAL_INSTALL_DIR}/lib/
+    DESTINATION lib
+    FILES_MATCHING PATTERN "*.so*"
 )
 
 if(WIN32)
@@ -174,12 +239,11 @@ if(WIN32)
     ]])
 endif()
 
+set(CPACK_GENERATOR "AppImage")
 set(CPACK_PACKAGE_NAME "Jakki")
 set(CPACK_PACKAGE_VENDOR "Jakki")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Jakki")
-set(CPACK_PACKAGE_VERSION_MAJOR ${CMAKE_PROJECT_VERSION_MAJOR})
-set(CPACK_PACKAGE_VERSION_MINOR ${CMAKE_PROJECT_VERSION_MINOR})
-set(CPACK_PACKAGE_VERSION_PATCH ${CMAKE_PROJECT_VERSION_PATCH})
+set(CPACK_PACKAGE_VERSION ${CMAKE_PROJECT_VERSION})
 set(CPACK_PACKAGE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/package")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "Jakki")
 set(CPACK_PACKAGE_EXECUTABLES "Jakki" "Jakki")
@@ -188,5 +252,6 @@ set(CPACK_NSIS_MUI_ICON "${CMAKE_CURRENT_SOURCE_DIR}/ui/images/icon.ico")
 set(CPACK_NSIS_MUI_UNIICON "${CMAKE_CURRENT_SOURCE_DIR}/ui/images/icon.ico")
 SET(CPACK_NSIS_INSTALLED_ICON_NAME "bin/jakki.exe")
 SET(CPACK_NSIS_MUI_FINISHPAGE_RUN "jakki.exe")
+set(CPACK_PACKAGE_ICON "icon-256.png")
 
 include(CPack)

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Jakki
+Comment=Native Internet Messenger
+Exec=jakki
+Icon=icon-256
+Categories=Network;InstantMessaging;
+Terminal=false

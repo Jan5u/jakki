@@ -1,6 +1,7 @@
 #include "encoder_vulkan.hpp"
 
 #include <array>
+#include <cstdlib>
 #include <cstring>
 #include <unistd.h>
 #include <vector>
@@ -32,6 +33,13 @@ bool extensionSupported(const std::vector<VkExtensionProperties> &extensions, co
         }
     }
     return false;
+}
+
+std::filesystem::path shaderDirectory() {
+    if (const char *appdir = std::getenv("APPDIR")) {
+        return std::filesystem::path(appdir) / "share" / "jakki" / "shaders";
+    }
+    return std::filesystem::path("shaders");
 }
 
 } // namespace
@@ -716,7 +724,7 @@ auto VulkanEncoder::initVulkan(const char *encoder) -> std::expected<void, std::
             return std::unexpected("Failed to create Vulkan descriptor pool");
         }
 
-        auto shader = createShader("shaders/bgra_to_nv12.comp.spv");
+        auto shader = createShader(shaderDirectory() / "bgra_to_nv12.comp.spv");
         if (!shader) {
             return std::unexpected(shader.error());
         }
