@@ -263,6 +263,7 @@ void PipewireCapture::createPipewireNode() {
     uint8_t buffer[1024];
     spa_pod_builder builder = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
     const spa_pod *params[1];
+    constexpr uint64_t nvidia_modifier = 0x0300000000606014ULL;
     params[0] = static_cast<const spa_pod *>(
         spa_pod_builder_add_object(
             &builder,
@@ -279,7 +280,11 @@ void PipewireCapture::createPipewireNode() {
             SPA_POD_Id(SPA_VIDEO_FORMAT_BGRA),
 
             SPA_FORMAT_VIDEO_modifier,
-            SPA_POD_Long(DRM_FORMAT_MOD_LINEAR)
+            SPA_POD_CHOICE_ENUM_Long(
+                2,
+                DRM_FORMAT_MOD_LINEAR,
+                nvidia_modifier
+            )
         )
     );
 
