@@ -118,6 +118,27 @@ auto VulkanEncoder::cleanup() -> void {
     m_frameCount = 0;
 }
 
+const char *resultString(VkResult result) {
+    switch (result) {
+        case VK_SUCCESS:
+            return "VK_SUCCESS";
+        case VK_ERROR_OUT_OF_HOST_MEMORY:
+            return "VK_ERROR_OUT_OF_HOST_MEMORY";
+        case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+            return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
+        case VK_ERROR_INITIALIZATION_FAILED:
+            return "VK_ERROR_INITIALIZATION_FAILED";
+        case VK_ERROR_LAYER_NOT_PRESENT:
+            return "VK_ERROR_LAYER_NOT_PRESENT";
+        case VK_ERROR_FORMAT_NOT_SUPPORTED:
+            return "VK_ERROR_FORMAT_NOT_SUPPORTED";
+        case VK_ERROR_INCOMPATIBLE_DRIVER:
+            return "VK_ERROR_INCOMPATIBLE_DRIVER (VK_ERROR_EXTENSION_NOT_PRESENT)";
+        default:
+            return "unknown VkResult";
+    }
+}
+
 auto VulkanEncoder::createShader(const std::filesystem::path &path) -> std::expected<VkShaderModule, std::string> {
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file) {
@@ -512,6 +533,17 @@ auto VulkanEncoder::importDmaBufAsImage(int dma_fd, int width, int height, uint6
 }
 
 auto VulkanEncoder::initVulkan(const char *encoder) -> std::expected<void, std::string> {
+    uint32_t supportedApiVersion = VK_API_VERSION_1_0;
+    if (vkEnumerateInstanceVersion(&supportedApiVersion) != VK_SUCCESS) {
+        return std::unexpected("Failed to enumerate Vulkan instance version");
+    }
+
+    if (supportedApiVersion < VK_API_VERSION_1_3) {
+        return std::unexpected(std::format(
+            "Vulkan 1.3 is required but the installed driver only supports {}.{}",
+            VK_API_VERSION_MAJOR(supportedApiVersion), VK_API_VERSION_MINOR(supportedApiVersion)));
+    }
+
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.apiVersion = VK_API_VERSION_1_3;
@@ -520,8 +552,8 @@ auto VulkanEncoder::initVulkan(const char *encoder) -> std::expected<void, std::
     instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instanceInfo.pApplicationInfo = &appInfo;
 
-    const std::vector<const char*> validationLayers = {
-    "VK_LAYER_KHRONOS_validation"
+    const std::vector<const char *> validationLayers = {
+        "VK_LAYER_KHRONOS_validation"
     };
 
 #ifdef NDEBUG
@@ -532,14 +564,29 @@ auto VulkanEncoder::initVulkan(const char *encoder) -> std::expected<void, std::
 #endif
 
     if (enableValidationLayers) {
-    instanceInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-    instanceInfo.ppEnabledLayerNames = validationLayers.data();
-    } else {
-        instanceInfo.enabledLayerCount = 0;
+        bool layerAvailable = false;
+        uint32_t layerCount = 0;
+        vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+        std::vector<VkLayerProperties> layers(layerCount);
+        vkEnumerateInstanceLayerProperties(&layerCount, layers.data());
+        for (const auto &layer : layers) {
+            if (std::strcmp(layer.layerName, validationLayers[0]) == 0) {
+                layerAvailable = true;
+                break;
+            }
+        }
+
+        if (layerAvailable) {
+            instanceInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+            instanceInfo.ppEnabledLayerNames = validationLayers.data();
+        } else {
+            std::println(stderr, "[VULKAN] Validation layer {} not installed, continuing without it", validationLayers[0]);
+        }
     }
 
-    if (vkCreateInstance(&instanceInfo, nullptr, &m_instance) != VK_SUCCESS) {
-        return std::unexpected("Failed to create Vulkan instance");
+    const VkResult createResult = vkCreateInstance(&instanceInfo, nullptr, &m_instance);
+    if (createResult != VK_SUCCESS) {
+        return std::unexpected(std::format("Failed to create Vulkan instance: {}", resultString(createResult)));
     }
 
     uint32_t physicalDeviceCount = 0;

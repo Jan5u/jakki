@@ -260,12 +260,35 @@ void PipewireCapture::createPipewireNode() {
     
     pw_stream_add_listener(pwdata.stream, &pwdata.stream_listener, &stream_events, this);
 
+    uint8_t buffer[1024];
+    spa_pod_builder builder = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
+    const spa_pod *params[1];
+    params[0] = static_cast<const spa_pod *>(
+        spa_pod_builder_add_object(
+            &builder,
+            SPA_TYPE_OBJECT_Format,
+            SPA_PARAM_EnumFormat,
+
+            SPA_FORMAT_mediaType,
+            SPA_POD_Id(SPA_MEDIA_TYPE_video),
+
+            SPA_FORMAT_mediaSubtype,
+            SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw),
+
+            SPA_FORMAT_VIDEO_format,
+            SPA_POD_Id(SPA_VIDEO_FORMAT_BGRA),
+
+            SPA_FORMAT_VIDEO_modifier,
+            SPA_POD_Long(DRM_FORMAT_MOD_LINEAR)
+        )
+    );
+
     pw_stream_connect(
         pwdata.stream,
         PW_DIRECTION_INPUT,
         m_portal_node_id,
         static_cast<pw_stream_flags>(PW_STREAM_FLAG_MAP_BUFFERS | PW_STREAM_FLAG_AUTOCONNECT),
-        nullptr, 0
+        params, 1
     );
 
     pw_main_loop_run(pwdata.loop);
