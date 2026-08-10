@@ -219,6 +219,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         for (const auto &user : ch.users) {
             if (ImGui::Selectable(user.username.c_str(), selectedUser == idx_u)) {
                 selectedUser = idx_u;
+                app->network.joinScreenShare(user.username.c_str());
             }
             idx_u++;
         }
@@ -230,9 +231,6 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     ImGui::Begin("User");
     if (ImGui::Button("Connect")) {
         ImGui::OpenPopup("Connect to Server");
-    }
-    if (ImGui::Button("joinScreenShare")) {
-        app->network.joinScreenShare("jansu");
     }
     if (ImGui::Button("startScreenShare")) {
         app->screenshareCapture = std::make_unique<PipewireCapture>(&app->network);
