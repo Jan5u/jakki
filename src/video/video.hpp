@@ -76,7 +76,8 @@ class Video {
     float GetVisibleUvBottom() const;
     VulkanVideoContext *vulkan_context = nullptr;
     AVCodecContext *OpenVideoStream(AVFormatContext *ic, int stream);
-    void decodeLoop();
+    bool decodeLoop();
+    Uint32 GetWakeupEventType() const;
     SDL_Renderer *renderer = nullptr;
     void receiveEncodedPacket(const std::vector<uint8_t>& packet);
     void startScreenShare(const char *encoder, int width, int height);
@@ -110,12 +111,13 @@ class Video {
     std::mutex queueMutex;
     std::condition_variable queueCV;
     const AVCodec *decoder = nullptr;
+    Uint32 m_wakeupEventType = 0;
 
     bool ensureDecoder(SDL_Renderer *renderer);
     void releaseDecoder();
     void destroyTextureCache();
     bool GetTextureForVulkanFrame(AVFrame *frame, SDL_Texture **texture);
-    void DisplayVideoTexture(AVFrame *frame);
+    bool DisplayVideoTexture(AVFrame *frame);
     bool GetTextureForFrame(AVFrame *frame, SDL_Texture **texture);
     int BeginFrameRendering(AVFrame *frame);
     int BeginVulkanFrameRendering(VulkanVideoContext *context, AVFrame *frame, SDL_Renderer *renderer);

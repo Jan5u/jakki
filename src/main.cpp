@@ -38,10 +38,15 @@ struct App {
     Video video;
     std::unique_ptr<PipewireCapture> screenshareCapture;
     std::string username = "jansu";
+    bool needsRedraw = false;
+    Uint32 redrawEventType = 0;
+    int popupStackSize = 0;
 };
 
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
     auto app = std::make_unique<App>();
+
+    SDL_SetHint(SDL_HINT_MAIN_CALLBACK_RATE, "waitevent");
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         printf("Error: SDL_Init(): %s\n", SDL_GetError());
@@ -69,7 +74,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
 
 
     // app->renderer = SDL_CreateRenderer(app->window, nullptr);
-    SDL_SetRenderVSync(app->renderer, 1);
+    SDL_SetRenderVSync(app->renderer, SDL_RENDERER_VSYNC_DISABLED);
     if (app->renderer == nullptr) {
         SDL_Log("Error: SDL_CreateRenderer(): %s\n", SDL_GetError());
         return SDL_APP_FAILURE;
@@ -100,6 +105,15 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
     app->network.setVideo(&app->video);
     app->auth.setUsername(app->username);
 
+    app->needsRedraw = true;
+    app->redrawEventType = SDL_RegisterEvents(1);
+    app->gui.setOnStateChanged([app_raw = app.get()]() {
+        SDL_Event event;
+        SDL_zero(event);
+        event.type = app_raw->redrawEventType;
+        SDL_PushEvent(&event);
+    });
+
     *appstate = app.release();
 
     return SDL_APP_CONTINUE;
@@ -108,17 +122,23 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
 SDL_AppResult SDL_AppIterate(void *appstate) {
     auto app = static_cast<App *>(appstate);
 
+    if (app->video.decodeLoop()) {
+        app->needsRedraw = true;
+    }
+
     if (SDL_GetWindowFlags(app->window) & SDL_WINDOW_MINIMIZED) {
-        SDL_WaitEvent(nullptr);
         return SDL_APP_CONTINUE;
     }
+
+    if (!app->needsRedraw) {
+        return SDL_APP_CONTINUE;
+    }
+    app->needsRedraw = false;
 
     ImGui_ImplSDLRenderer3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
     ImGuiIO &io = ImGui::GetIO();
-
-    app->video.decodeLoop();
 
     bool show_demo_window = true;
     bool show_another_window = false;
@@ -255,16 +275,74 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), app->renderer);
     SDL_RenderPresent(app->renderer);
 
+    int popup_stack_size = (int)ImGui::GetCurrentContext()->OpenPopupStack.Size;
+    if (popup_stack_size != app->popupStackSize) {
+        app->needsRedraw = true;
+        SDL_Event event;
+        SDL_zero(event);
+        event.type = app->redrawEventType;
+        SDL_PushEvent(&event);
+    }
+    app->popupStackSize = popup_stack_size;
+
     return SDL_APP_CONTINUE;
 }
 
 SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
     auto app = static_cast<App *>(appstate);
     ImGui_ImplSDL3_ProcessEvent(event);
-    if (event->type == SDL_EVENT_QUIT)
+
+    switch (event->type) {
+    case SDL_EVENT_QUIT:
         return SDL_APP_SUCCESS;
-    if (event->type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event->window.windowID == SDL_GetWindowID(app->window))
-        return SDL_APP_SUCCESS;
+    case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+        if (event->window.windowID == SDL_GetWindowID(app->window))
+            return SDL_APP_SUCCESS;
+        break;
+    case SDL_EVENT_KEY_DOWN:
+    case SDL_EVENT_KEY_UP:
+    case SDL_EVENT_TEXT_EDITING:
+    case SDL_EVENT_TEXT_INPUT:
+    case SDL_EVENT_MOUSE_MOTION:
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_BUTTON_UP:
+    case SDL_EVENT_MOUSE_WHEEL:
+    case SDL_EVENT_FINGER_DOWN:
+    case SDL_EVENT_FINGER_UP:
+    case SDL_EVENT_FINGER_MOTION:
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+    case SDL_EVENT_GAMEPAD_BUTTON_UP:
+    case SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN:
+    case SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION:
+    case SDL_EVENT_GAMEPAD_TOUCHPAD_UP:
+    case SDL_EVENT_DROP_BEGIN:
+    case SDL_EVENT_DROP_POSITION:
+    case SDL_EVENT_DROP_COMPLETE:
+    case SDL_EVENT_DROP_FILE:
+    case SDL_EVENT_DROP_TEXT:
+    case SDL_EVENT_WINDOW_SHOWN:
+    case SDL_EVENT_WINDOW_EXPOSED:
+    case SDL_EVENT_WINDOW_MOVED:
+    case SDL_EVENT_WINDOW_RESIZED:
+    case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+    case SDL_EVENT_WINDOW_MAXIMIZED:
+    case SDL_EVENT_WINDOW_RESTORED:
+    case SDL_EVENT_WINDOW_FOCUS_GAINED:
+    case SDL_EVENT_WINDOW_FOCUS_LOST:
+    case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
+    case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
+    case SDL_EVENT_DISPLAY_ADDED:
+    case SDL_EVENT_DISPLAY_REMOVED:
+    case SDL_EVENT_DISPLAY_CONTENT_SCALE_CHANGED:
+    case SDL_EVENT_DISPLAY_CURRENT_MODE_CHANGED:
+        app->needsRedraw = true;
+        break;
+    default:
+        if (event->type == app->redrawEventType) {
+            app->needsRedraw = true;
+        }
+        break;
+    }
 
     return SDL_APP_CONTINUE;
 }

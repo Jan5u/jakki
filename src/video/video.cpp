@@ -1,6 +1,12 @@
 #include "video.hpp"
 
-Video::Video() {}
+Video::Video() {
+    m_wakeupEventType = SDL_RegisterEvents(1);
+}
+
+Uint32 Video::GetWakeupEventType() const {
+    return m_wakeupEventType;
+}
 
 Video::~Video() {
     releaseDecoder();
@@ -1025,11 +1031,13 @@ AVCodecContext *Video::OpenVideoStream(AVFormatContext *ic, int stream) {
     return context;
 }
 
-void Video::decodeLoop() {
+bool Video::decodeLoop() {
     if (!ensureDecoder(renderer))
-        return;
+        return false;
 
-    auto drainFrames = [this]() {
+    bool displayed = false;
+
+    auto drainFrames = [this, &displayed]() {
         while (true) {
             int ret = avcodec_receive_frame(m_codecContext, m_frame);
 
@@ -1053,8 +1061,10 @@ void Video::decodeLoop() {
                 m_frame->color_range = AVCOL_RANGE_MPEG;
             }
 
-            DisplayVideoTexture(m_frame);
-            decoded = true;
+            if (DisplayVideoTexture(m_frame)) {
+                decoded = true;
+                displayed = true;
+            }
         }
     };
 
@@ -1111,19 +1121,21 @@ void Video::decodeLoop() {
             drainFrames();
         }
     }
+
+    return displayed;
 }
 
-void Video::DisplayVideoTexture(AVFrame *frame) {
+bool Video::DisplayVideoTexture(AVFrame *frame) {
     if (!GetTextureForFrame(frame, &m_texture)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Couldn't get texture for frame: %s", SDL_GetError());
-        return;
+        return false;
     }
 
     if (BeginFrameRendering(frame) < 0) {
-        return;
+        return false;
     }
 
-    FinishFrameRendering(frame);
+    return FinishFrameRendering(frame) == 0;
 }
 
 bool Video::GetTextureForFrame(AVFrame *frame, SDL_Texture **texture)
@@ -1289,8 +1301,16 @@ int Video::FinishVulkanFrameRendering(VulkanVideoContext *context, AVFrame *fram
 }
 
 void Video::receiveEncodedPacket(const std::vector<uint8_t> &packet) {
-    std::lock_guard lock(queueMutex);
-    packetQueue.push(std::move(packet));
+    {
+        std::lock_guard lock(queueMutex);
+        packetQueue.push(std::move(packet));
+    }
+
+    SDL_Event event;
+    SDL_zero(event);
+    event.type = m_wakeupEventType;
+    event.common.timestamp = 0;
+    SDL_PushEvent(&event);
 }
 
 void Video::startScreenShare(const char *encoderName, int width, int height) {
