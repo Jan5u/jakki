@@ -6,7 +6,9 @@
 #include <openssl/pem.h>
 #include <vector>
 
+#ifndef _WIN32
 #include <libsecret/secret.h>
+#endif
 
 class Auth {
   public:

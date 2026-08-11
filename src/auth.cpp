@@ -4,6 +4,51 @@ Auth::Auth() {}
 
 Auth::~Auth() {}
 
+static std::string pemEncodePrivateKey(EVP_PKEY *key) {
+    if (!key) {
+        return {};
+    }
+
+    BIO *bio = BIO_new(BIO_s_mem());
+    if (!bio) {
+        std::cerr << "Failed to create BIO" << std::endl;
+        return {};
+    }
+    if (PEM_write_bio_PrivateKey(bio, key, nullptr, nullptr, 0, nullptr, nullptr) != 1) {
+        std::cerr << "Failed to write private key to BIO" << std::endl;
+        ERR_print_errors_fp(stderr);
+        BIO_free(bio);
+        return {};
+    }
+    char *pem_data = nullptr;
+    long pem_len = BIO_get_mem_data(bio, &pem_data);
+    std::string pemString;
+    if (pem_len > 0 && pem_data)
+        pemString.assign(pem_data, pem_len);
+    BIO_free(bio);
+    return pemString;
+}
+
+static EVP_PKEY *pemDecodePrivateKey(const std::string &pemString) {
+    BIO *bio = BIO_new_mem_buf(pemString.data(), static_cast<int>(pemString.size()));
+    if (!bio) {
+        std::cerr << "Failed to create BIO from PEM data" << std::endl;
+        return nullptr;
+    }
+
+    EVP_PKEY *key = PEM_read_bio_PrivateKey(bio, nullptr, nullptr, nullptr);
+    BIO_free(bio);
+
+    if (!key) {
+        std::cerr << "Failed to parse private key from PEM" << std::endl;
+        ERR_print_errors_fp(stderr);
+    }
+
+    return key;
+}
+
+#ifndef _WIN32
+
 static const SecretSchema *jakki_get_schema() {
     static const SecretSchema schema = {
         "org.jakki.PrivateKey",
@@ -21,23 +66,10 @@ bool Auth::savePrivateKey() {
         return false;
     }
 
-    BIO *bio = BIO_new(BIO_s_mem());
-    if (!bio) {
-        std::cerr << "Failed to create BIO" << std::endl;
+    std::string pemString = pemEncodePrivateKey(keypair);
+    if (pemString.empty()) {
         return false;
     }
-    if (PEM_write_bio_PrivateKey(bio, keypair, nullptr, nullptr, 0, nullptr, nullptr) != 1) {
-        std::cerr << "Failed to write private key to BIO" << std::endl;
-        ERR_print_errors_fp(stderr);
-        BIO_free(bio);
-        return false;
-    }
-    char *pem_data = nullptr;
-    long pem_len = BIO_get_mem_data(bio, &pem_data);
-    std::string pemString;
-    if (pem_len > 0 && pem_data)
-        pemString.assign(pem_data, pem_len);
-    BIO_free(bio);
 
     GError *error = NULL;
     const SecretSchema *schema = jakki_get_schema();
@@ -72,23 +104,23 @@ bool Auth::loadPrivateKey() {
     std::string pemString(pem_c);
     secret_password_free(pem_c);
 
-    BIO *bio = BIO_new_mem_buf(pemString.data(), static_cast<int>(pemString.size()));
-    if (!bio) {
-        std::cerr << "Failed to create BIO from PEM data" << std::endl;
-        return false;
-    }
-
-    keypair = PEM_read_bio_PrivateKey(bio, nullptr, nullptr, nullptr);
-    BIO_free(bio);
-
-    if (!keypair) {
-        std::cerr << "Failed to parse private key from PEM" << std::endl;
-        ERR_print_errors_fp(stderr);
-        return false;
-    }
-
-    return true;
+    keypair = pemDecodePrivateKey(pemString);
+    return keypair != nullptr;
 }
+
+#else
+
+bool Auth::savePrivateKey() {
+    std::cerr << "Key storage is not implemented on Windows yet" << std::endl;
+    return false;
+}
+
+bool Auth::loadPrivateKey() {
+    std::cerr << "Key storage is not implemented on Windows yet" << std::endl;
+    return false;
+}
+
+#endif
 
 bool Auth::generateKeys()
 {

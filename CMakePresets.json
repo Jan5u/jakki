@@ -57,6 +57,16 @@
                 "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_CXX_COMPILER": "g++"
             }
+        },
+        {
+            "name": "local-msys-release",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/msys-release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_C_COMPILER": "cl.exe",
+                "CMAKE_CXX_COMPILER": "cl.exe"
+            }
         }
     ],
     "buildPresets": [

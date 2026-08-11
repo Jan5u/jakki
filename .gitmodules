@@ -10,3 +10,18 @@
 [submodule "third_party/libportal"]
 	path = third_party/libportal
 	url = https://github.com/flatpak/libportal
+[submodule "third_party/openssl"]
+	path = third_party/openssl
+	url = https://github.com/openssl/openssl
+[submodule "third_party/vulkan-headers"]
+	path = third_party/vulkan-headers
+	url = https://github.com/KhronosGroup/vulkan-headers
+[submodule "third_party/vulkan-loader"]
+	path = third_party/vulkan-loader
+	url = https://github.com/KhronosGroup/vulkan-loader
+[submodule "third_party/opus"]
+	path = third_party/opus
+	url = https://github.com/xiph/opus
+[submodule "third_party/nlohmann-json"]
+	path = third_party/nlohmann-json
+	url = https://github.com/nlohmann/json

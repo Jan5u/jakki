@@ -5,9 +5,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Threads REQUIRED)
-find_package(OpenSSL REQUIRED)
-find_package(nlohmann_json REQUIRED)
-find_package(Vulkan REQUIRED)
+
+if(WIN32)
+    add_compile_definitions(NOMINMAX)
+endif()
 
 if(UNIX)
     find_package(PkgConfig REQUIRED)
@@ -17,27 +18,27 @@ if(UNIX)
 endif()
 
 # Find glslc for compiling shaders
-find_program(GLSLC glslc)
-if(NOT GLSLC)
-    message(FATAL_ERROR "glslc not found. Please install the Vulkan SDK.")
-endif()
+# find_program(GLSLC glslc)
+# if(NOT GLSLC)
+#     message(FATAL_ERROR "glslc not found. Please install the Vulkan SDK.")
+# endif()
 
-function(compile_shader target shader_file)
-    get_filename_component(shader_name ${shader_file} NAME_WE)
-    get_filename_component(shader_ext ${shader_file} EXT)
-    string(SUBSTRING ${shader_ext} 1 -1 shader_stage)
-    set(output_dir ${CMAKE_CURRENT_BINARY_DIR}/shaders)
-    file(MAKE_DIRECTORY ${output_dir})
-    set(output_file ${output_dir}/${shader_name}.${shader_stage}.spv)
-    add_custom_command(
-        OUTPUT ${output_file}
-        COMMAND ${GLSLC} ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -o ${output_file}
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file}
-        COMMENT "Compiling ${shader_file}"
-        VERBATIM
-    )
-    target_sources(${target} PRIVATE ${output_file})
-endfunction()
+# function(compile_shader target shader_file)
+#     get_filename_component(shader_name ${shader_file} NAME_WE)
+#     get_filename_component(shader_ext ${shader_file} EXT)
+#     string(SUBSTRING ${shader_ext} 1 -1 shader_stage)
+#     set(output_dir ${CMAKE_CURRENT_BINARY_DIR}/shaders)
+#     file(MAKE_DIRECTORY ${output_dir})
+#     set(output_file ${output_dir}/${shader_name}.${shader_stage}.spv)
+#     add_custom_command(
+#         OUTPUT ${output_file}
+#         COMMAND ${GLSLC} ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file} -o ${output_file}
+#         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${shader_file}
+#         COMMENT "Compiling ${shader_file}"
+#         VERBATIM
+#     )
+#     target_sources(${target} PRIVATE ${output_file})
+# endfunction()
 
 set(COMMON_SOURCES
     src/main.cpp
@@ -49,8 +50,6 @@ set(COMMON_SOURCES
     src/gui.cpp
     src/audio/audio.hpp
     src/audio/audio.cpp
-    src/audio/pipewire_impl.hpp
-    src/audio/pipewire_impl.cpp
     src/audio/audio_impl.hpp
     src/audio/audio_impl.cpp
     src/config.hpp
@@ -59,15 +58,27 @@ set(COMMON_SOURCES
     src/video/video.cpp
     src/video/encode/encoder.hpp
     src/video/encode/encoder.cpp
-    src/video/encode/encoder_vulkan.hpp
-    src/video/encode/encoder_vulkan.cpp
     src/video/capture/capture.hpp
     src/video/capture/capture.cpp
-    src/video/capture/capture_linux.hpp
-    src/video/capture/capture_linux.cpp
-    src/portal.hpp
-    src/portal.cpp
 )
+if(WIN32)
+    list(APPEND COMMON_SOURCES
+        src/audio/wasapi_impl.hpp
+        src/audio/wasapi_impl.cpp
+        ui/jakki.rc
+    )
+else()
+    list(APPEND COMMON_SOURCES
+        src/portal.hpp
+        src/portal.cpp
+        src/audio/pipewire_impl.hpp
+        src/audio/pipewire_impl.cpp
+        src/video/capture/capture_linux.hpp
+        src/video/capture/capture_linux.cpp
+        src/video/encode/encoder_vulkan.hpp
+        src/video/encode/encoder_vulkan.cpp
+    )
+endif()
 
 add_executable(jakki
     ${COMMON_SOURCES}
@@ -86,20 +97,27 @@ target_include_directories(jakki PRIVATE
     third_party/imgui/misc/cpp
 )
 
-compile_shader(jakki ui/shaders/screen.vert)
-compile_shader(jakki ui/shaders/screen.frag)
-compile_shader(jakki ui/shaders/bgra_to_nv12.comp)
+# compile_shader(jakki ui/shaders/screen.vert)
+# compile_shader(jakki ui/shaders/screen.frag)
+# compile_shader(jakki ui/shaders/bgra_to_nv12.comp)
 
 
 include(ExternalProject)
+set(VULKAN_INSTALL_DIR ${CMAKE_BINARY_DIR}/vulkan-install)
+set(VULKAN_HEADERS_DIR ${CMAKE_SOURCE_DIR}/third_party/vulkan-headers)
 set(FFMPEG_INSTALL_DIR ${CMAKE_BINARY_DIR}/ffmpeg-install)
 
 ExternalProject_Add(ffmpeg
     SOURCE_DIR ${CMAKE_SOURCE_DIR}/third_party/ffmpeg
     BUILD_IN_SOURCE 1
 
-    CONFIGURE_COMMAND ./configure
+    CONFIGURE_COMMAND
+        C:/msys64/usr/bin/bash.exe
+        ./configure
+        --toolchain=msvc
         --prefix=${FFMPEG_INSTALL_DIR}
+        --extra-cflags=-I${VULKAN_HEADERS_DIR}/include
+        --extra-ldflags=-LIBPATH:${VULKAN_INSTALL_DIR}/lib
         --disable-programs
         --disable-doc
         --disable-all
@@ -123,69 +141,166 @@ target_include_directories(jakki PRIVATE
 
 target_link_directories(jakki PRIVATE
     ${FFMPEG_INSTALL_DIR}/lib
+    ${FFMPEG_INSTALL_DIR}/bin
 )
 
 add_dependencies(jakki ffmpeg)
 
 set(LIBPORTAL_INSTALL_DIR ${CMAKE_BINARY_DIR}/libportal-install)
 
-ExternalProject_Add(libportal
-    SOURCE_DIR ${CMAKE_SOURCE_DIR}/third_party/libportal
-    BUILD_IN_SOURCE 0
+# ExternalProject_Add(libportal
+#     SOURCE_DIR ${CMAKE_SOURCE_DIR}/third_party/libportal
+#     BUILD_IN_SOURCE 0
 
-    CONFIGURE_COMMAND meson setup
-        <BINARY_DIR>
-        <SOURCE_DIR>
-        --prefix=${LIBPORTAL_INSTALL_DIR}
-        --libdir=lib
-        --buildtype=release
-        -Dtests=false
-        -Dvapi=false
-        -Dintrospection=false
-        -Ddocs=false
-        -Dbackend-gtk3=disabled
-        -Dbackend-gtk4=disabled
-        -Dbackend-qt5=disabled
-        -Dbackend-qt6=disabled
+#     CONFIGURE_COMMAND meson setup
+#         <BINARY_DIR>
+#         <SOURCE_DIR>
+#         --prefix=${LIBPORTAL_INSTALL_DIR}
+#         --libdir=lib
+#         --buildtype=release
+#         -Dtests=false
+#         -Dvapi=false
+#         -Dintrospection=false
+#         -Ddocs=false
+#         -Dbackend-gtk3=disabled
+#         -Dbackend-gtk4=disabled
+#         -Dbackend-qt5=disabled
+#         -Dbackend-qt6=disabled
 
-    BUILD_COMMAND meson compile -C <BINARY_DIR>
-    INSTALL_COMMAND meson install -C <BINARY_DIR>
+#     BUILD_COMMAND meson compile -C <BINARY_DIR>
+#     INSTALL_COMMAND meson install -C <BINARY_DIR>
+# )
+
+# target_include_directories(jakki PRIVATE
+#     ${LIBPORTAL_INSTALL_DIR}/include
+# )
+
+# target_link_directories(jakki PRIVATE
+#     ${LIBPORTAL_INSTALL_DIR}/lib
+# )
+
+# add_dependencies(jakki libportal)
+
+set(OPENSSL_INSTALL_DIR ${CMAKE_BINARY_DIR}/openssl)
+set(OPENSSL_PERL
+    "C:/Strawberry/perl/bin/perl.exe"
+)
+ExternalProject_Add(openssl
+    SOURCE_DIR ${CMAKE_SOURCE_DIR}/third_party/openssl
+    CONFIGURE_COMMAND
+        "${OPENSSL_PERL}"
+        Configure
+            --prefix=${OPENSSL_INSTALL_DIR}
+            no-tests
+            no-docs
+            shared
+            no-legacy
+            no-comp
+            no-cmp
+            no-ct
+            no-filenames
+            no-http
+            no-idea
+            no-mdc2
+            no-psk
+            no-srp
+            no-tls1
+            no-tls1_1
+            no-weak-ssl-ciphers
+            no-apps
+    BUILD_COMMAND nmake
+    INSTALL_COMMAND nmake install_sw
+    BUILD_IN_SOURCE 1
 )
 
 target_include_directories(jakki PRIVATE
-    ${LIBPORTAL_INSTALL_DIR}/include
+    ${OPENSSL_INSTALL_DIR}/include
 )
 
 target_link_directories(jakki PRIVATE
-    ${LIBPORTAL_INSTALL_DIR}/lib
+    ${OPENSSL_INSTALL_DIR}/lib
 )
 
-add_dependencies(jakki libportal)
+add_dependencies(jakki openssl)
 
 
 
 add_subdirectory(third_party/sdl)
+
+
+
+add_subdirectory(third_party/vulkan-loader)
+add_subdirectory(third_party/vulkan-headers)
+
+add_subdirectory(third_party/nlohmann-json)
+
+# Opus
+set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+add_subdirectory(
+    "${CMAKE_SOURCE_DIR}/third_party/opus"
+    "${CMAKE_BINARY_DIR}/third_party/opus"
+)
+
 
 install(TARGETS SDL3-shared
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION bin
 )
 
+set(OPUS_INCLUDE_DIR
+    "${CMAKE_BINARY_DIR}/opus-include"
+)
+
+file(MAKE_DIRECTORY
+    "${OPUS_INCLUDE_DIR}/opus"
+)
+
+file(CREATE_LINK
+    "${CMAKE_SOURCE_DIR}/third_party/opus/include/opus.h"
+    "${OPUS_INCLUDE_DIR}/opus/opus.h"
+    SYMBOLIC
+)
+
+target_include_directories(jakki PRIVATE
+    "${OPUS_INCLUDE_DIR}"
+)
+
 target_link_libraries(jakki PRIVATE 
     SDL3::SDL3
-    OpenSSL::SSL
-    OpenSSL::Crypto
     nlohmann_json::nlohmann_json
-    PkgConfig::LIBSECRET
-    PkgConfig::PIPEWIRE
-    PkgConfig::OPUS
+    # PkgConfig::LIBSECRET
+    # PkgConfig::PIPEWIRE
+    # PkgConfig::OPUS
     Threads::Threads
     avcodec
     avformat
     avutil
-    Vulkan::Vulkan
-    portal
+    Vulkan::Headers
+    vulkan
+    Opus::opus
 )
+
+if(WIN32)
+    target_link_libraries(jakki PRIVATE libssl libcrypto)
+else()
+    target_link_libraries(jakki PRIVATE ssl crypto portal)
+endif()
+
+if(WIN32)
+    file(GLOB FFMPEG_RUNTIME_DLLS "${FFMPEG_INSTALL_DIR}/bin/*.dll")
+    file(GLOB OPENSSL_RUNTIME_DLLS "${OPENSSL_INSTALL_DIR}/bin/*.dll")
+    add_custom_command(TARGET jakki POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${FFMPEG_RUNTIME_DLLS}
+            ${OPENSSL_RUNTIME_DLLS}
+            "$<TARGET_FILE:SDL3-shared>"
+            "$<TARGET_FILE:Opus::opus>"
+            "$<TARGET_FILE:vulkan>"
+            $<TARGET_FILE_DIR:jakki>
+        VERBATIM
+    )
+endif()
 
 # if(WIN32)
 #     set_target_properties(jakki PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)

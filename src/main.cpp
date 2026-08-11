@@ -21,7 +21,9 @@
 #include "gui.hpp"
 #include "audio/audio.hpp"
 #include "video/video.hpp"
+#ifndef _WIN32
 #include "video/capture/capture_linux.hpp"
+#endif
 
 static int selectedChannel = -1;
 static int selectedUser = -1;
@@ -36,7 +38,9 @@ struct App {
     Config config;
     Audio audio{network, config};
     Video video;
+#ifndef _WIN32
     std::unique_ptr<PipewireCapture> screenshareCapture;
+#endif
     std::string username = "jansu";
     bool needsRedraw = false;
     Uint32 redrawEventType = 0;
@@ -233,9 +237,11 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         ImGui::OpenPopup("Connect to Server");
     }
     if (ImGui::Button("startScreenShare")) {
+#ifndef _WIN32
         app->screenshareCapture = std::make_unique<PipewireCapture>(&app->network);
         app->screenshareCapture->selectScreen();
         app->screenshareCapture->startCapture();
+#endif
     }
     if (ImGui::BeginPopupModal("Connect to Server", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Address");
