@@ -10,3 +10,6 @@
 [submodule "third_party/libportal"]
 	path = third_party/libportal
 	url = https://github.com/flatpak/libportal
+[submodule "third_party/opus"]
+	path = third_party/opus
+	url = https://github.com/xiph/opus

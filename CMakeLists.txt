@@ -13,7 +13,6 @@ if(UNIX)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(LIBSECRET REQUIRED IMPORTED_TARGET libsecret-1)
     pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET libpipewire-0.3)
-    pkg_check_modules(OPUS REQUIRED IMPORTED_TARGET opus)
 endif()
 
 # Find glslc for compiling shaders
@@ -166,6 +165,12 @@ add_dependencies(jakki libportal)
 
 add_subdirectory(third_party/sdl)
 
+set(BUILD_SHARED_LIBS ON)
+set(OPUS_INSTALL_PKG_CONFIG_MODULE OFF)
+set(OPUS_INSTALL_CMAKE_CONFIG_MODULE OFF)
+
+add_subdirectory(third_party/opus)
+
 install(TARGETS SDL3-shared
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION bin
@@ -178,7 +183,7 @@ target_link_libraries(jakki PRIVATE
     nlohmann_json::nlohmann_json
     PkgConfig::LIBSECRET
     PkgConfig::PIPEWIRE
-    PkgConfig::OPUS
+    Opus::opus
     Threads::Threads
     avcodec
     avformat
@@ -186,6 +191,12 @@ target_link_libraries(jakki PRIVATE
     Vulkan::Vulkan
     portal
 )
+
+install(CODE [[
+    file(REMOVE_RECURSE
+        "${CMAKE_INSTALL_PREFIX}/include"
+    )
+]])
 
 # if(WIN32)
 #     set_target_properties(jakki PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)
