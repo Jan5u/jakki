@@ -13,6 +13,7 @@ if(UNIX)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(LIBSECRET REQUIRED IMPORTED_TARGET libsecret-1)
     pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET libpipewire-0.3)
+    pkg_check_modules(ZSTD REQUIRED IMPORTED_TARGET libzstd)
 endif()
 
 # Find glslc for compiling shaders
@@ -70,20 +71,9 @@ set(COMMON_SOURCES
 
 add_executable(jakki
     ${COMMON_SOURCES}
-    third_party/imgui/imgui.cpp
-    third_party/imgui/imgui_draw.cpp
-    third_party/imgui/imgui_tables.cpp
-    third_party/imgui/imgui_widgets.cpp
-    third_party/imgui/imgui_demo.cpp
-    third_party/imgui/backends/imgui_impl_sdl3.cpp
-    third_party/imgui/backends/imgui_impl_sdlrenderer3.cpp
-    third_party/imgui/misc/cpp/imgui_stdlib.cpp
 )
-target_include_directories(jakki PRIVATE
-    third_party/imgui
-    third_party/imgui/backends
-    third_party/imgui/misc/cpp
-)
+
+target_compile_definitions(jakki PRIVATE JAKKI_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 
 compile_shader(jakki ui/shaders/screen.vert)
 compile_shader(jakki ui/shaders/screen.frag)
@@ -164,6 +154,8 @@ add_dependencies(jakki libportal)
 
 
 add_subdirectory(third_party/sdl)
+add_subdirectory(third_party/sdl_ttf)
+add_subdirectory(third_party/sdl_image)
 
 set(BUILD_SHARED_LIBS ON)
 set(OPUS_INSTALL_PKG_CONFIG_MODULE OFF)
@@ -178,11 +170,14 @@ install(TARGETS SDL3-shared
 
 target_link_libraries(jakki PRIVATE 
     SDL3::SDL3
+    SDL3_ttf::SDL3_ttf
+    SDL3_image::SDL3_image
     OpenSSL::SSL
     OpenSSL::Crypto
     nlohmann_json::nlohmann_json
     PkgConfig::LIBSECRET
     PkgConfig::PIPEWIRE
+    PkgConfig::ZSTD
     Opus::opus
     Threads::Threads
     avcodec

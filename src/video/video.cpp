@@ -860,10 +860,6 @@ bool Video::GetTextureForVulkanFrame(AVFrame *frame, SDL_Texture **texture) {
         }
     }
 
-    /* The decoded Vulkan image covers the coded (aligned) dimensions, e.g.
-       1920x1088 for a 1920x1080 stream. The frame crop fields describe the
-       visible picture inside that image, so record the visible region as UV
-       coordinates for the display to sample instead of the whole image. */
     if (frame->hw_frames_ctx && frame->width > 0 && frame->height > 0) {
         m_visibleUvLeft = static_cast<float>(frame->crop_left) / frame->width;
         m_visibleUvTop = static_cast<float>(frame->crop_top) / frame->height;
@@ -874,6 +870,21 @@ bool Video::GetTextureForVulkanFrame(AVFrame *frame, SDL_Texture **texture) {
         m_visibleUvTop = 0.0f;
         m_visibleUvRight = 1.0f;
         m_visibleUvBottom = 1.0f;
+    }
+
+    const int displayWidth = (m_codecContext && m_codecContext->width > 0) ? m_codecContext->width : frame->width;
+    const int displayHeight = (m_codecContext && m_codecContext->height > 0) ? m_codecContext->height : frame->height;
+    if (m_textureWidth > 0 && displayWidth > 0 && displayWidth < m_textureWidth) {
+        const float right = static_cast<float>(displayWidth) / static_cast<float>(m_textureWidth);
+        if (right < m_visibleUvRight) {
+            m_visibleUvRight = right;
+        }
+    }
+    if (m_textureHeight > 0 && displayHeight > 0 && displayHeight < m_textureHeight) {
+        const float bottom = static_cast<float>(displayHeight) / static_cast<float>(m_textureHeight);
+        if (bottom < m_visibleUvBottom) {
+            m_visibleUvBottom = bottom;
+        }
     }
 
     return true;

@@ -4,6 +4,70 @@
 #include "video/video.hpp"
 // // #include "video/video.hpp"
 
+#include <cstdint>
+#include <vector>
+#include <zstd.h>
+#include <openssl/evp.h>
+
+namespace {
+
+std::string base64Encode(const std::vector<uint8_t> &data) {
+    if (data.empty()) {
+        return {};
+    }
+    std::string out(4 * ((data.size() + 2) / 3), '\0');
+    const int n = EVP_EncodeBlock(reinterpret_cast<unsigned char *>(out.data()), data.data(), (int)data.size());
+    if (n < 0) {
+        return {};
+    }
+    out.resize((size_t)n);
+    return out;
+}
+
+std::vector<uint8_t> base64Decode(const std::string &encoded) {
+    if (encoded.empty()) {
+        return {};
+    }
+    std::vector<uint8_t> out(3 * (encoded.size() / 4) + 3);
+    const int n = EVP_DecodeBlock(out.data(), reinterpret_cast<const unsigned char *>(encoded.data()),
+                                  (int)encoded.size());
+    if (n < 0) {
+        return {};
+    }
+    size_t padding = 0;
+    if (encoded.size() >= 2 && encoded[encoded.size() - 1] == '=') padding++;
+    if (encoded.size() >= 2 && encoded[encoded.size() - 2] == '=') padding++;
+    out.resize((size_t)n - padding);
+    return out;
+}
+
+std::vector<uint8_t> compressZstd(const std::string &data) {
+    const size_t bound = ZSTD_compressBound(data.size());
+    std::vector<uint8_t> out(bound);
+    const size_t written = ZSTD_compress(out.data(), bound, data.data(), data.size(), 3);
+    if (ZSTD_isError(written)) {
+        return {};
+    }
+    out.resize(written);
+    return out;
+}
+
+std::string decompressZstd(const std::vector<uint8_t> &data) {
+    const unsigned long long size = ZSTD_getFrameContentSize(data.data(), data.size());
+    if (size == ZSTD_CONTENTSIZE_ERROR || size == ZSTD_CONTENTSIZE_UNKNOWN) {
+        return {};
+    }
+    std::string out((size_t)size, '\0');
+    const size_t written = ZSTD_decompress(out.data(), size, data.data(), data.size());
+    if (ZSTD_isError(written)) {
+        return {};
+    }
+    out.resize(written);
+    return out;
+}
+
+} // namespace
+
 enum class EventType {
     ServerInfo,
     Message,
@@ -208,20 +272,6 @@ void Network::setVideo(Video *v) {video = v; }
 //     }
 // }
 
-// void Network::sendTextMessage(const QString &jsonMessage) {
-//     if (!connected || !eventStream) {
-//         std::cerr << "Cannot send text message: not connected or no event stream\n";
-//         return;
-//     }
-//     QByteArray messageBytes = jsonMessage.toUtf8();
-//     messageBytes.append('\n');
-
-//     int ret = SSL_write(eventStream, messageBytes.constData(), messageBytes.size());
-//     if (ret <= 0) {
-//         std::cerr << "Failed to send text message" << std::endl;
-//     }
-// }
-
 // void Network::requestUserList() {
 //     if (!connected || !eventStream) {
 //         std::cerr << "Cannot request user list: not connected or no event stream\n";
@@ -283,6 +333,7 @@ void Network::handleEventMessage(std::string msg) {
             std::string user = j["user"].get<std::string>();
             std::string channel = j["channel"].get<std::string>();
             std::println("User {} left channel {}", user, channel);
+            if (gui) gui->onUserLeaveVoiceChannel(user, channel);
         }
         break;
     case EventType::AdminResponse:
@@ -298,15 +349,37 @@ void Network::handleEventMessage(std::string msg) {
             std::string sender = j["user"].get<std::string>();
             std::string content = j["content"].get<std::string>();
             bool compressed = j.value("compressed", false);
-            std::println("Text message from {} in {} ({} bytes{})", sender, channel, content.size(), compressed ? ", compressed" : "");
+            if (compressed) {
+                const std::vector<uint8_t> decoded = base64Decode(content);
+                const std::string decompressed = decompressZstd(decoded);
+                if (!decompressed.empty()) {
+                    content = decompressed;
+                }
+            }
+            std::println("Text message from {} in {} ({} bytes)", sender, channel, content.size());
+            if (gui) gui->onTextMessage(channel, sender, content);
         }
         break;
     case EventType::HistoryResponse:
         if (j.contains("channel") && j.contains("messages") && j["channel"].is_string() && j["messages"].is_array()) {
             std::string channel = j["channel"].get<std::string>();
-            std::vector<json> messages;
-            for (const auto &m : j["messages"]) messages.push_back(m);
+            std::vector<ChatMessage> messages;
+            for (const auto &m : j["messages"]) {
+                if (!m.is_object() || !m.contains("user") || !m.contains("content")) continue;
+                if (!m["user"].is_string() || !m["content"].is_string()) continue;
+                std::string sender = m["user"].get<std::string>();
+                std::string content = m["content"].get<std::string>();
+                if (m.value("compressed", false)) {
+                    const std::vector<uint8_t> decoded = base64Decode(content);
+                    const std::string decompressed = decompressZstd(decoded);
+                    if (!decompressed.empty()) {
+                        content = decompressed;
+                    }
+                }
+                messages.push_back(ChatMessage{sender, content});
+            }
             std::println("History response for {}: {} messages", channel, messages.size());
+            if (gui) gui->onHistoryReceived(channel, messages);
         }
         break;
     case EventType::EmoteListResponse:
@@ -591,6 +664,54 @@ void Network::joinScreenShare(std::string userName) {
     std::cout << "Sent joinScreenshare event for user: " << userName.data() << std::endl;
     
     recvScreenshareThread = std::jthread(&Network::receiveScreensharePackets, this);
+}
+
+void Network::sendTextMessage(const std::string& channel, const std::string& content) {
+    if (content.empty()) {
+        return;
+    }
+    if (!connected || !eventStream) {
+        std::println("Not connected, cannot send text message");
+        return;
+    }
+
+    json j;
+    j["type"] = "Message";
+    j["channel"] = channel;
+
+    const std::vector<uint8_t> compressed = compressZstd(content);
+    if (compressed.empty()) {
+        j["content"] = content;
+        j["compressed"] = false;
+    } else {
+        j["content"] = base64Encode(compressed);
+        j["compressed"] = true;
+    }
+
+    const std::string message = j.dump() + "\n";
+    size_t written = 0;
+    if (!SSL_write_ex(eventStream, message.data(), message.size(), &written)) {
+        std::println("Failed to send text message");
+    }
+}
+
+void Network::requestChannelHistory(const std::string& channel, int limit) {
+    if (!connected || !eventStream) {
+        std::println("Not connected, cannot request channel history");
+        return;
+    }
+
+    json j;
+    j["type"] = "history_request";
+    j["channel"] = channel;
+    j["limit"] = limit;
+    j["before"] = 0;
+
+    const std::string message = j.dump() + "\n";
+    size_t written = 0;
+    if (!SSL_write_ex(eventStream, message.data(), message.size(), &written)) {
+        std::println("Failed to request channel history");
+    }
 }
 
 void Network::receiveScreensharePackets() {

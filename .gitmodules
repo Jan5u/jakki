@@ -1,6 +1,3 @@
-[submodule "third_party/imgui"]
-	path = third_party/imgui
-	url = https://github.com/ocornut/imgui
 [submodule "third_party/ffmpeg"]
 	path = third_party/ffmpeg
 	url = https://github.com/ffmpeg/ffmpeg
@@ -13,3 +10,9 @@
 [submodule "third_party/opus"]
 	path = third_party/opus
 	url = https://github.com/xiph/opus
+[submodule "third_party/sdl_ttf"]
+	path = third_party/sdl_ttf
+	url = https://github.com/libsdl-org/SDL_ttf
+[submodule "third_party/sdl_image"]
+	path = third_party/sdl_image
+	url = https://github.com/libsdl-org/SDL_image

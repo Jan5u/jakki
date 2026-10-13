@@ -46,6 +46,8 @@ class Network {
         void leaveVoiceChannel();
         // bool isInVoiceChannel() const { return inVoiceChannel; }
         void joinScreenShare(std::string userName);
+        void sendTextMessage(const std::string& channel, const std::string& content);
+        void requestChannelHistory(const std::string& channel, int limit);
         // bool isConnected() const { return connected; }
         // void sendAdminMessage(const QString& requestType);
         // void sendTextMessage(const QString& jsonMessage);
