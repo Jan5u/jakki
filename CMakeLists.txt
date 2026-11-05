@@ -75,8 +75,6 @@ add_executable(jakki
 
 target_compile_definitions(jakki PRIVATE JAKKI_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 
-compile_shader(jakki ui/shaders/screen.vert)
-compile_shader(jakki ui/shaders/screen.frag)
 compile_shader(jakki ui/shaders/bgra_to_nv12.comp)
 
 
@@ -151,7 +149,13 @@ target_link_directories(jakki PRIVATE
 
 add_dependencies(jakki libportal)
 
-
+set(SDL_GPU OFF)
+set(SDL_HAPTIC OFF)
+set(SDL_JOYSTICK OFF)
+set(SDL_SENSOR OFF)
+set(SDL_HIDAPI OFF)
+set(SDL_POWER OFF)
+set(SDL_SENSOR OFF)
 
 add_subdirectory(third_party/sdl)
 add_subdirectory(third_party/sdl_ttf)

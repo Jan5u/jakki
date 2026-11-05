@@ -226,7 +226,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
 
     SDL_SetHint(SDL_HINT_MAIN_CALLBACK_RATE, "waitevent");
 
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
         printf("Error: SDL_Init(): %s\n", SDL_GetError());
         return SDL_APP_FAILURE;
     }
