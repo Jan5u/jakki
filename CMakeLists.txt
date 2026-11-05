@@ -172,6 +172,16 @@ install(TARGETS SDL3-shared
     RUNTIME DESTINATION bin
 )
 
+install(TARGETS SDL3_image-shared
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin
+)
+
+install(TARGETS SDL3_ttf-shared
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin
+)
+
 target_link_libraries(jakki PRIVATE 
     SDL3::SDL3
     SDL3_ttf::SDL3_ttf
