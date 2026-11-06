@@ -1,5 +1,12 @@
 #include "video.hpp"
 
+#ifdef SDL_PLATFORM_WIN32
+#include <d3d11.h>
+extern "C" {
+#include <libavutil/hwcontext_d3d11va.h>
+}
+#endif
+
 Video::Video() {
     m_wakeupEventType = SDL_RegisterEvents(1);
 }
@@ -986,6 +993,8 @@ AVCodecContext *Video::OpenVideoStream(AVFormatContext *ic, int stream) {
         }
 
 #ifdef SDL_PLATFORM_WIN32
+        ID3D11Device *d3d11_device = nullptr;
+        ID3D11DeviceContext *d3d11_context = nullptr;
         if (d3d11_device && config->device_type == AV_HWDEVICE_TYPE_D3D11VA) {
             AVD3D11VADeviceContext *device_context;
 
@@ -993,9 +1002,9 @@ AVCodecContext *Video::OpenVideoStream(AVFormatContext *ic, int stream) {
 
             device_context = (AVD3D11VADeviceContext *)((AVHWDeviceContext *)context->hw_device_ctx->data)->hwctx;
             device_context->device = d3d11_device;
-            ID3D11Device_AddRef(device_context->device);
+            device_context->device->AddRef();
             device_context->device_context = d3d11_context;
-            ID3D11DeviceContext_AddRef(device_context->device_context);
+            device_context->device_context->AddRef();
 
             result = av_hwdevice_ctx_init(context->hw_device_ctx);
             if (result < 0) {
@@ -1325,6 +1334,10 @@ void Video::receiveEncodedPacket(const std::vector<uint8_t> &packet) {
 }
 
 void Video::startScreenShare(const char *encoderName, int width, int height) {
+#ifndef _WIN32
     auto encoder = CreateEncoder(Backend::Vulkan);
-    encoder->init(encoderName, width, height);
+    if (encoder) {
+        encoder->init(encoderName, width, height);
+    }
+#endif
 }

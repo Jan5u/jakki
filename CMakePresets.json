@@ -2,78 +2,81 @@
     "version": 8,
     "configurePresets": [
         {
-            "name": "local-vcpkg-debug",
+            "name": "gcc-debug",
             "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build/debug",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug",
-                "CMAKE_CXX_COMPILER": "cl.exe",
-                "CMAKE_TOOLCHAIN_FILE": "$env{USERPROFILE}/vcpkg/scripts/buildsystems/vcpkg.cmake",
-                "VCPKG_TARGET_TRIPLET": "x64-windows",
-                "VCPKG_HOST_TRIPLET": "x64-windows",
-                "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed"
-            }
-        },
-        {
-            "name": "local-vcpkg-release",
-            "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build/release",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release",
-                "CMAKE_CXX_COMPILER": "cl.exe",
-                "CMAKE_TOOLCHAIN_FILE": "$env{USERPROFILE}/vcpkg/scripts/buildsystems/vcpkg.cmake",
-                "VCPKG_TARGET_TRIPLET": "x64-windows",
-                "VCPKG_HOST_TRIPLET": "x64-windows",
-                "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed",
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/install"
-            }
-        },
-        {
-            "name": "ci-vcpkg-release",
-            "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build/release",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release",
-                "CMAKE_CXX_COMPILER": "cl.exe",
-                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
-                "VCPKG_TARGET_TRIPLET": "x64-windows-release",
-                "VCPKG_HOST_TRIPLET": "x64-windows-release"
-            }
-        },
-        {
-            "name": "local-gcc-debug",
-            "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build/debug",
+            "binaryDir": "${sourceDir}/build/gcc",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
                 "CMAKE_CXX_COMPILER": "g++"
             }
         },
         {
-            "name": "local-gcc-release",
+            "name": "gcc-release",
             "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build/release",
+            "binaryDir": "${sourceDir}/build/gcc",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_CXX_COMPILER": "g++",
                 "CMAKE_INSTALL_PREFIX": "${sourceDir}/install"
             }
+        },
+        {
+            "name": "mingw-debug",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/mingw",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_SYSTEM_PROCESSOR": "x86_64",
+                "CMAKE_C_COMPILER": "x86_64-w64-mingw32-gcc",
+                "CMAKE_CXX_COMPILER": "x86_64-w64-mingw32-g++",
+                "CMAKE_RC_COMPILER": "x86_64-w64-mingw32-windres",
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/install",
+                "CMAKE_SYSTEM_NAME": "Windows",
+                "CMAKE_FIND_ROOT_PATH": "/usr/x86_64-w64-mingw32",
+                "CMAKE_FIND_ROOT_PATH_MODE_PROGRAM": "NEVER",
+                "CMAKE_FIND_ROOT_PATH_MODE_LIBRARY": "ONLY",
+                "CMAKE_FIND_ROOT_PATH_MODE_INCLUDE": "ONLY",
+                "CMAKE_FIND_ROOT_PATH_MODE_PACKAGE": "ONLY"
+            }
+        },
+        {
+            "name": "mingw-release",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/mingw",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_SYSTEM_PROCESSOR": "x86_64",
+                "CMAKE_C_COMPILER": "x86_64-w64-mingw32-gcc",
+                "CMAKE_CXX_COMPILER": "x86_64-w64-mingw32-g++",
+                "CMAKE_RC_COMPILER": "x86_64-w64-mingw32-windres",
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/install",
+                "CMAKE_SYSTEM_NAME": "Windows",
+                "CMAKE_FIND_ROOT_PATH": "/usr/x86_64-w64-mingw32",
+                "CMAKE_FIND_ROOT_PATH_MODE_PROGRAM": "NEVER",
+                "CMAKE_FIND_ROOT_PATH_MODE_LIBRARY": "ONLY",
+                "CMAKE_FIND_ROOT_PATH_MODE_INCLUDE": "ONLY",
+                "CMAKE_FIND_ROOT_PATH_MODE_PACKAGE": "ONLY"
+            }
         }
     ],
     "buildPresets": [
         {
-            "name": "ci-vcpkg-build",
-            "description": "",
-            "displayName": "",
-            "configurePreset": "ci-vcpkg-release"
+            "name": "ci-gcc-build",
+            "configurePreset": "gcc-release"
+        },
+        {
+            "name": "ci-mingw-build",
+            "configurePreset": "mingw-release"
         }
     ],
     "packagePresets": [
         {
-            "name": "ci-vcpkg-package",
-            "description": "",
-            "displayName": "",
-            "configurePreset": "ci-vcpkg-release"
+            "name": "ci-gcc-package",
+            "configurePreset": "gcc-release"
+        },
+        {
+            "name": "ci-mingw-package",
+            "configurePreset": "mingw-release"
         }
     ]
 }

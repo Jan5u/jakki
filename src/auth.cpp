@@ -1,9 +1,17 @@
 #include "auth.hpp"
 
+#ifdef _WIN32
+#include <windows.h>
+#include <wincred.h>
+#else
+#include <libsecret/secret.h>
+#endif
+
 Auth::Auth() {}
 
 Auth::~Auth() {}
 
+#ifndef _WIN32
 static const SecretSchema *jakki_get_schema() {
     static const SecretSchema schema = {
         "org.jakki.PrivateKey",
@@ -14,6 +22,7 @@ static const SecretSchema *jakki_get_schema() {
     };
     return &schema;
 }
+#endif
 
 bool Auth::savePrivateKey() {
     if (!keypair) {
@@ -39,6 +48,20 @@ bool Auth::savePrivateKey() {
         pemString.assign(pem_data, pem_len);
     BIO_free(bio);
 
+#ifdef _WIN32
+    CREDENTIALW cred = {};
+    cred.Type = CRED_TYPE_GENERIC;
+    cred.TargetName = const_cast<LPWSTR>(L"org.jakki.PrivateKey");
+    cred.UserName = const_cast<LPWSTR>(L"jakki");
+    cred.Persist = CRED_PERSIST_LOCAL_MACHINE;
+    cred.CredentialBlobSize = static_cast<DWORD>(pemString.size());
+    cred.CredentialBlob = reinterpret_cast<LPBYTE>(const_cast<char *>(pemString.data()));
+
+    if (!CredWriteW(&cred, 0)) {
+        std::cerr << "Credential Manager store error: " << GetLastError() << std::endl;
+        return false;
+    }
+#else
     GError *error = NULL;
     const SecretSchema *schema = jakki_get_schema();
     const char *label = "jakki ed25519 private key";
@@ -50,11 +73,26 @@ bool Auth::savePrivateKey() {
         g_error_free(error);
         return false;
     }
+#endif
 
     return true;
 }
 
 bool Auth::loadPrivateKey() {
+#ifdef _WIN32
+    PCREDENTIALW cred = nullptr;
+    if (!CredReadW(L"org.jakki.PrivateKey", CRED_TYPE_GENERIC, 0, &cred)) {
+        if (GetLastError() == ERROR_NOT_FOUND) {
+            std::cout << "No existing key found in Credential Manager" << std::endl;
+        } else {
+            std::cerr << "Credential Manager lookup error: " << GetLastError() << std::endl;
+        }
+        return false;
+    }
+
+    std::string pemString(reinterpret_cast<char *>(cred->CredentialBlob), cred->CredentialBlobSize);
+    CredFree(cred);
+#else
     GError *error = NULL;
     const SecretSchema *schema = jakki_get_schema();
 
@@ -71,6 +109,7 @@ bool Auth::loadPrivateKey() {
 
     std::string pemString(pem_c);
     secret_password_free(pem_c);
+#endif
 
     BIO *bio = BIO_new_mem_buf(pemString.data(), static_cast<int>(pemString.size()));
     if (!bio) {

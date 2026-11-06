@@ -6,8 +6,6 @@
 #include <openssl/pem.h>
 #include <vector>
 
-#include <libsecret/secret.h>
-
 class Auth {
   public:
     Auth();

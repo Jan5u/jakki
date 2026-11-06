@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
 #include <memory>
 #include <print>
 #include <string>
@@ -16,7 +18,9 @@
 #include "config.hpp"
 #include "gui.hpp"
 #include "network.hpp"
+#ifndef _WIN32
 #include "video/capture/capture_linux.hpp"
+#endif
 #include "video/video.hpp"
 
 static int selectedChannel = -1;
@@ -32,7 +36,9 @@ struct App {
     Config config;
     Audio audio{network, config};
     Video video;
+#ifndef _WIN32
     std::unique_ptr<PipewireCapture> screenshareCapture;
+#endif
     std::string username = "jansu";
     bool needsRedraw = false;
     bool uiDirty = true;
@@ -63,6 +69,58 @@ struct App {
     SDL_Texture *chatTexture = nullptr;
     float scale = 1.0f;
 };
+
+static const std::filesystem::path &assetRoot() {
+    static const std::filesystem::path root = [] {
+        std::filesystem::path base;
+        if (const char *basePath = SDL_GetBasePath()) {
+            base = std::filesystem::path(reinterpret_cast<const char8_t *>(basePath));
+        }
+        if (base.empty()) {
+            base = std::filesystem::current_path();
+        }
+
+        for (std::filesystem::path dir = base;;) {
+            if (std::filesystem::exists(dir / "ui" / "icons")) {
+                return dir;
+            }
+            const std::filesystem::path parent = dir.parent_path();
+            if (parent.empty() || parent == dir) {
+                break;
+            }
+            dir = parent;
+        }
+
+        return std::filesystem::current_path();
+    }();
+    return root;
+}
+
+static std::string assetPath(const std::string &relative) {
+    return (assetRoot() / relative).string();
+}
+
+static std::filesystem::path defaultFontPath() {
+#ifdef _WIN32
+    std::filesystem::path fontsDir;
+    if (const char *windir = std::getenv("WINDIR")) {
+        fontsDir = std::filesystem::path(reinterpret_cast<const char8_t *>(windir)) / "Fonts";
+    } else {
+        fontsDir = "C:/Windows/Fonts";
+    }
+
+    for (const char *name : {"segoeui.ttf", "arial.ttf", "tahoma.ttf"}) {
+        const std::filesystem::path path = fontsDir / name;
+        if (std::filesystem::exists(path)) {
+            return path;
+        }
+    }
+
+    return fontsDir / "segoeui.ttf";
+#else
+    return "/usr/share/fonts/TTF/DejaVuSans.ttf";
+#endif
+}
 
 static SDL_Surface *loadTintedIcon(const std::string &path, int size, SDL_Color color) {
     SDL_IOStream *io = SDL_IOFromFile(path.c_str(), "rb");
@@ -259,9 +317,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
     SDL_ShowWindow(app->window);
 
     TTF_Init();
-    app->ui.font = TTF_OpenFont("/usr/share/fonts/TTF/DejaVuSans.ttf", 16.0f * main_scale);
+    const std::string fontPath = defaultFontPath().string();
+    app->ui.font = TTF_OpenFont(fontPath.c_str(), 16.0f * main_scale);
     if (!app->ui.font) {
-        SDL_Log("Failed to open font: %s", SDL_GetError());
+        SDL_Log("Failed to open font %s: %s", fontPath.c_str(), SDL_GetError());
     }
     ensureUiSurface(app.get());
 
@@ -275,7 +334,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
     app->gui.channelList.cornerRadius = 0.0f;
     app->gui.channelList.rowRadius = 4.0f * main_scale;
     app->settingsButton.icon =
-        loadTintedIcon(std::string(JAKKI_ASSET_DIR) + "/ui/icons/settings.svg", (int)(20.0f * main_scale), app->settingsButton.textColor);
+        loadTintedIcon(assetPath("ui/icons/settings.svg"), (int)(20.0f * main_scale), app->settingsButton.textColor);
 
     app->settingsDialog.title = "Settings";
     app->settingsDialog.cornerRadius = 10.0f * main_scale;
@@ -292,9 +351,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
     app->settingsDialog.navItemGap = 4.0f * main_scale;
 
     const int sectionIconSize = (int)app->settingsDialog.iconSize;
-    const std::string iconDir = std::string(JAKKI_ASSET_DIR) + "/ui/icons/";
-
-    app->gui.channelList.avatarIcon = loadTintedIcon(iconDir + "user.svg", (int)app->gui.channelList.avatarSize, app->gui.channelList.userNameColor);
+    app->gui.channelList.avatarIcon = loadTintedIcon(assetPath("ui/icons/user.svg"), (int)app->gui.channelList.avatarSize, app->gui.channelList.userNameColor);
 
     app->chat.cornerRadius = 0.0f;
     app->chat.padding = 16.0f * main_scale;
@@ -312,17 +369,17 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
 
     DialogSection appearance;
     appearance.title = "Appearance";
-    appearance.icon = loadTintedIcon(iconDir + "wallpaper.svg", sectionIconSize, app->settingsDialog.sectionColor);
+    appearance.icon = loadTintedIcon(assetPath("ui/icons/wallpaper.svg"), sectionIconSize, app->settingsDialog.sectionColor);
     appearance.sliders.push_back({{}, 0.7f});
     appearance.sliders.push_back({{}, 0.4f});
 
     DialogSection audio;
     audio.title = "Audio";
-    audio.icon = loadTintedIcon(iconDir + "headphones.svg", sectionIconSize, app->settingsDialog.sectionColor);
+    audio.icon = loadTintedIcon(assetPath("ui/icons/headphones.svg"), sectionIconSize, app->settingsDialog.sectionColor);
 
     DialogSection screenshare;
     screenshare.title = "Screenshare";
-    screenshare.icon = loadTintedIcon(iconDir + "monitor.svg", sectionIconSize, app->settingsDialog.sectionColor);
+    screenshare.icon = loadTintedIcon(assetPath("ui/icons/monitor.svg"), sectionIconSize, app->settingsDialog.sectionColor);
 
     app->settingsDialog.sections.push_back(std::move(appearance));
     app->settingsDialog.sections.push_back(std::move(audio));
@@ -351,7 +408,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
     app->connectDialog.connectButton = {{}, "Connect"};
     app->connectDialog.connectButton.cornerRadius = 6.0f * main_scale;
 
-    app->screenshareButton.icon = loadTintedIcon(iconDir + "monitor.svg", (int)(20.0f * main_scale), app->settingsButton.textColor);
+    app->screenshareButton.icon = loadTintedIcon(assetPath("ui/icons/monitor.svg"), (int)(20.0f * main_scale), app->settingsButton.textColor);
     app->screenshareDialog.cornerRadius = 10.0f * main_scale;
     app->screenshareDialog.padding = 24.0f * main_scale;
     app->screenshareDialog.titleArea = 56.0f * main_scale;
@@ -531,9 +588,13 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
         app->screenshareDialog.handleEvent(*event);
         if (app->screenshareDialog.startRequested) {
             app->screenshareDialog.startRequested = false;
+#ifndef _WIN32
             app->screenshareCapture = std::make_unique<PipewireCapture>(&app->network);
             app->screenshareCapture->selectScreen();
             app->screenshareCapture->startCapture();
+#else
+            std::println("Screenshare capture is not supported on Windows yet");
+#endif
             app->screenshareDialog.open = false;
         }
     } else if (app->settingsDialog.open) {

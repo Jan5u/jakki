@@ -1,6 +1,6 @@
 #pragma once
 
-#include <opus/opus.h>
+#include <opus.h>
 #include <queue>
 #include <string>
 #include <thread>
