@@ -1,0 +1,48 @@
+name: Build
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and cache
+        uses: devcontainers/ci@v0.3
+        with:
+          imageName: ghcr.io/jan5u/ci
+          cacheFrom: ghcr.io/jan5u/ci
+          push: always
+          runCmd: |
+            cmake --preset gcc-release
+            cmake --build --preset ci-gcc-build
+            cpack --preset ci-gcc-package
+            
+            cmake --preset mingw-release
+            cmake --build --preset ci-mingw-build
+            cpack --preset ci-mingw-package
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: packages
+          path: |
+            package/*.AppImage
+            package/*.exe

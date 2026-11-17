@@ -1,0 +1,14 @@
+{
+    "name": "jakki",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "postCreateCommand": "git submodule update --init --depth 1 --recursive",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.cpptools-extension-pack"
+            ]
+        }
+    }
+}

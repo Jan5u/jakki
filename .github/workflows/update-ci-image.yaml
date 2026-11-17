@@ -1,0 +1,33 @@
+name: Update CI Image
+
+on:
+  schedule:
+    - cron: "0 8 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  update-image:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Rebuild CI image
+        uses: devcontainers/ci@v0.3
+        with:
+          imageName: ghcr.io/jan5u/ci
+          noCache: true
+          push: always
+          runCmd: echo "CI image updated"
