@@ -3,7 +3,6 @@
     "build": {
         "dockerfile": "Dockerfile"
     },
-    "postCreateCommand": "git submodule update --init --depth 1 --recursive",
     "customizations": {
         "vscode": {
             "extensions": [
