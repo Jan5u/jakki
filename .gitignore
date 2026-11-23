@@ -4,4 +4,3 @@
 build
 install
 package
-vcpkg_installed
