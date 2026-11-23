@@ -413,6 +413,10 @@ if(WIN32)
         )
     endif()
 
+    set_target_properties(jakki PROPERTIES
+        WIN32_EXECUTABLE "$<CONFIG:Release>"
+    )
+
     install(CODE [[
         file(REMOVE_RECURSE "${CMAKE_INSTALL_PREFIX}/lib")
     ]])
