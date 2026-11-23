@@ -407,16 +407,10 @@ if(WIN32)
     )
 
     if(MINGW)
-        foreach(runtime_dll libgcc_s_seh-1.dll libssp-0.dll libstdc++-6.dll libwinpthread-1.dll)
-            execute_process(
-                COMMAND ${CMAKE_CXX_COMPILER} -print-prog-name=${runtime_dll}
-                OUTPUT_VARIABLE runtime_dll_path
-                OUTPUT_STRIP_TRAILING_WHITESPACE
-            )
-            if(EXISTS "${runtime_dll_path}")
-                install(FILES "${runtime_dll_path}" DESTINATION ${CMAKE_INSTALL_BINDIR})
-            endif()
-        endforeach()
+        target_link_options(jakki PRIVATE
+            -static-libstdc++
+            -static-libgcc
+        )
     endif()
 
     install(CODE [[
