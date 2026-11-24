@@ -18,7 +18,10 @@
 #include "config.hpp"
 #include "gui.hpp"
 #include "network.hpp"
-#ifndef _WIN32
+#include "video/capture/capture.hpp"
+#ifdef _WIN32
+#include "video/capture/capture_windows.hpp"
+#else
 #include "video/capture/capture_linux.hpp"
 #endif
 #include "video/video.hpp"
@@ -36,9 +39,7 @@ struct App {
     Config config;
     Audio audio{network, config};
     Video video;
-#ifndef _WIN32
-    std::unique_ptr<PipewireCapture> screenshareCapture;
-#endif
+    std::unique_ptr<Capture> screenshareCapture;
     std::string username = "jansu";
     bool needsRedraw = false;
     bool uiDirty = true;
@@ -588,13 +589,13 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
         app->screenshareDialog.handleEvent(*event);
         if (app->screenshareDialog.startRequested) {
             app->screenshareDialog.startRequested = false;
-#ifndef _WIN32
+#ifdef _WIN32
+            app->screenshareCapture = std::make_unique<DxgiCapture>(&app->network);
+#else
             app->screenshareCapture = std::make_unique<PipewireCapture>(&app->network);
+#endif
             app->screenshareCapture->selectScreen();
             app->screenshareCapture->startCapture();
-#else
-            std::println("Screenshare capture is not supported on Windows yet");
-#endif
             app->screenshareDialog.open = false;
         }
     } else if (app->settingsDialog.open) {

@@ -73,6 +73,10 @@ if(WIN32)
     list(APPEND COMMON_SOURCES
         src/audio/wasapi_impl.hpp
         src/audio/wasapi_impl.cpp
+        src/video/capture/capture_windows.hpp
+        src/video/capture/capture_windows.cpp
+        src/video/encode/encoder_vulkan.hpp
+        src/video/encode/encoder_vulkan.cpp
         ui/jakki.rc
     )
 else()
@@ -318,9 +322,21 @@ if(WIN32)
             libzstd_static
             stdc++exp
             Vulkan::Loader
+            d3d11
+            dxgi
+            dxguid
+            user32
         )
     else()
-        target_link_libraries(jakki PRIVATE libssl libcrypto libzstd_static Vulkan::Loader)
+        target_link_libraries(jakki PRIVATE
+            libssl
+            libcrypto
+            libzstd_static
+            Vulkan::Loader
+            d3d11
+            dxgi
+            user32
+        )
     endif()
 else()
     target_link_libraries(jakki PRIVATE 

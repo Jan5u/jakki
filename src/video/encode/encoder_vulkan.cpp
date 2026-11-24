@@ -1,13 +1,17 @@
 #include "encoder_vulkan.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <cstring>
-#include <unistd.h>
 #include <vector>
 
-#include "../../network.hpp"
+#ifndef _WIN32
+#include <unistd.h>
 #include <libdrm/drm_fourcc.h>
+#endif
+
+#include "../../network.hpp"
 #include <vk_video/vulkan_video_codec_h264std.h>
 
 namespace {
@@ -44,7 +48,12 @@ std::filesystem::path shaderDirectory() {
 
 } // namespace
 
-VulkanEncoder::VulkanEncoder(Network *network) : m_network(network) {}
+VulkanEncoder::VulkanEncoder(Network *network, const uint8_t *adapterLuid) : m_network(network) {
+    if (adapterLuid) {
+        std::copy(adapterLuid, adapterLuid + m_adapterLuid.size(), m_adapterLuid.begin());
+        m_hasAdapterLuid = true;
+    }
+}
 
 VulkanEncoder::~VulkanEncoder() {
     cleanup();
@@ -171,7 +180,16 @@ auto VulkanEncoder::createShader(const std::filesystem::path &path) -> std::expe
 }
 
 auto VulkanEncoder::init(const char *encoder, int width, int height) -> void {
+    initWithAdapter(encoder, width, height, m_hasAdapterLuid ? m_adapterLuid.data() : nullptr);
+}
+
+auto VulkanEncoder::initWithAdapter(const char *encoder, int width, int height, const uint8_t *adapterLuid) -> void {
     cleanup();
+
+    if (adapterLuid) {
+        std::copy(adapterLuid, adapterLuid + m_adapterLuid.size(), m_adapterLuid.begin());
+        m_hasAdapterLuid = true;
+    }
 
     if (!encoder) {
         std::println(stderr, "[VULKAN] Missing encoder name");
@@ -257,13 +275,18 @@ auto VulkanEncoder::destroyImportedImage(ImportedImage &image) -> void {
     }
 }
 
-auto VulkanEncoder::lookupOrCreateImport(int dma_fd, int width, int height, uint64_t modifier) -> ImportedImage * {
-    auto it = m_importCache.find(dma_fd);
+auto VulkanEncoder::lookupOrCreateImport(uintptr_t key, int width, int height, uint64_t modifier) -> ImportedImage * {
+    auto it = m_importCache.find(key);
     if (it != m_importCache.end()) {
         return &it->second;
     }
 
-    auto imported = importDmaBufAsImage(dma_fd, width, height, modifier);
+#ifndef _WIN32
+    auto imported = importDmaBufAsImage(static_cast<int>(key), width, height, modifier);
+#else
+    (void)modifier;
+    auto imported = importWin32HandleAsImage(reinterpret_cast<HANDLE>(key), width, height);
+#endif
     if (!imported) {
         std::println(stderr, "{}", imported.error());
         return nullptr;
@@ -275,7 +298,7 @@ auto VulkanEncoder::lookupOrCreateImport(int dma_fd, int width, int height, uint
         m_importCache.erase(m_importCache.begin());
     }
 
-    it = m_importCache.emplace(dma_fd, *imported).first;
+    it = m_importCache.emplace(key, *imported).first;
     return &it->second;
 }
 
@@ -414,8 +437,8 @@ auto VulkanEncoder::createImageView(VkImage image, VkFormat format, VkImageAspec
 auto VulkanEncoder::transitionImage(VkCommandBuffer commandBuffer, VkImage image, VkImageAspectFlags aspectFlags, VkImageLayout oldLayout, VkImageLayout newLayout) -> void {
     VkImageMemoryBarrier2 barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-    barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-    barrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+    barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
     barrier.dstStageMask = (newLayout == VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR) ? VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR : VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
     barrier.dstAccessMask = (newLayout == VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR) ? VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR : (VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
     barrier.oldLayout = oldLayout;
@@ -437,6 +460,7 @@ auto VulkanEncoder::transitionImage(VkCommandBuffer commandBuffer, VkImage image
     vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
 }
 
+#ifndef _WIN32
 auto VulkanEncoder::importDmaBufAsImage(int dma_fd, int width, int height, uint64_t modifier) -> std::expected<ImportedImage, std::string> {
     ImportedImage imported;
 
@@ -531,6 +555,112 @@ auto VulkanEncoder::importDmaBufAsImage(int dma_fd, int width, int height, uint6
     imported.view = *view;
     return imported;
 }
+#endif
+
+#ifdef _WIN32
+auto VulkanEncoder::importWin32HandleAsImage(HANDLE sharedHandle, int width, int height) -> std::expected<ImportedImage, std::string> {
+    ImportedImage imported;
+
+    constexpr VkExternalMemoryHandleTypeFlagBits handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_BIT_KHR;
+
+    VkExternalMemoryImageCreateInfo externalInfo{};
+    externalInfo.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
+    externalInfo.handleTypes = handleType;
+
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.pNext = &externalInfo;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.format = VK_FORMAT_B8G8R8A8_UNORM;
+    imageInfo.extent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    if (vkCreateImage(m_device, &imageInfo, nullptr, &imported.image) != VK_SUCCESS) {
+        return std::unexpected("Failed to create image for Win32 shared handle import");
+    }
+
+    VkMemoryRequirements memRequirements{};
+    vkGetImageMemoryRequirements(m_device, imported.image, &memRequirements);
+
+    auto getMemoryWin32HandleProperties = reinterpret_cast<PFN_vkGetMemoryWin32HandlePropertiesKHR>(
+        vkGetInstanceProcAddr(m_instance, "vkGetMemoryWin32HandlePropertiesKHR"));
+    if (!getMemoryWin32HandleProperties) {
+        destroyImportedImage(imported);
+        return std::unexpected("Vulkan loader does not expose vkGetMemoryWin32HandlePropertiesKHR");
+    }
+
+    VkMemoryWin32HandlePropertiesKHR handleProperties{};
+    handleProperties.sType = VK_STRUCTURE_TYPE_MEMORY_WIN32_HANDLE_PROPERTIES_KHR;
+    if (getMemoryWin32HandleProperties(m_device, handleType, sharedHandle, &handleProperties) != VK_SUCCESS) {
+        destroyImportedImage(imported);
+        return std::unexpected("Failed to query Win32 shared handle memory properties");
+    }
+
+    HANDLE duplicate = nullptr;
+    if (!DuplicateHandle(GetCurrentProcess(), sharedHandle, GetCurrentProcess(), &duplicate,
+                         0, FALSE, DUPLICATE_SAME_ACCESS)) {
+        destroyImportedImage(imported);
+        return std::unexpected("Failed to duplicate Win32 shared handle");
+    }
+
+    VkMemoryDedicatedAllocateInfo dedicatedInfo{};
+    dedicatedInfo.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
+    dedicatedInfo.image = imported.image;
+
+    VkImportMemoryWin32HandleInfoKHR importInfo{};
+    importInfo.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_WIN32_HANDLE_INFO_KHR;
+    importInfo.pNext = &dedicatedInfo;
+    importInfo.handleType = handleType;
+    importInfo.handle = duplicate;
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.pNext = &importInfo;
+    allocInfo.allocationSize = memRequirements.size;
+
+    VkPhysicalDeviceMemoryProperties memoryProperties{};
+    vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &memoryProperties);
+
+    const uint32_t compatibleTypes = memRequirements.memoryTypeBits & handleProperties.memoryTypeBits;
+    bool foundMemoryType = false;
+    for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; ++i) {
+        if ((compatibleTypes & (1u << i)) &&
+            (memoryProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+            allocInfo.memoryTypeIndex = i;
+            foundMemoryType = true;
+            break;
+        }
+    }
+
+    if (!foundMemoryType || vkAllocateMemory(m_device, &allocInfo, nullptr, &imported.memory) != VK_SUCCESS) {
+        CloseHandle(duplicate);
+        destroyImportedImage(imported);
+        return std::unexpected("Failed to allocate memory for Win32 shared handle import");
+    }
+
+    CloseHandle(duplicate);
+
+    if (vkBindImageMemory(m_device, imported.image, imported.memory, 0) != VK_SUCCESS) {
+        destroyImportedImage(imported);
+        return std::unexpected("Failed to bind Win32 imported image memory");
+    }
+
+    auto view = createImageView(imported.image, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
+    if (!view) {
+        destroyImportedImage(imported);
+        return std::unexpected(view.error());
+    }
+    imported.view = *view;
+
+    return imported;
+}
+#endif
 
 auto VulkanEncoder::initVulkan(const char *encoder) -> std::expected<void, std::string> {
     uint32_t supportedApiVersion = VK_API_VERSION_1_0;
@@ -602,6 +732,21 @@ auto VulkanEncoder::initVulkan(const char *encoder) -> std::expected<void, std::
     const char *codecExtension = codecExtensionForName(encoder);
 
     for (VkPhysicalDevice device : physicalDevices) {
+        VkPhysicalDeviceProperties2 properties{};
+        properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        VkPhysicalDeviceIDProperties idProperties{};
+        idProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES;
+        properties.pNext = &idProperties;
+        vkGetPhysicalDeviceProperties2(device, &properties);
+
+        if (m_hasAdapterLuid) {
+            if (!idProperties.deviceLUIDValid ||
+                std::memcmp(idProperties.deviceLUID, m_adapterLuid.data(), m_adapterLuid.size()) != 0) {
+                continue;
+            }
+            std::println("[VULKAN] Matched D3D11 adapter LUID");
+        }
+
         uint32_t queueFamilyCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
         if (queueFamilyCount == 0) {
@@ -642,15 +787,25 @@ auto VulkanEncoder::initVulkan(const char *encoder) -> std::expected<void, std::
         }
 
         std::vector<const char *> requiredExtensions{
-            VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
-            VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME,
             VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
-            VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME,
             VK_KHR_VIDEO_QUEUE_EXTENSION_NAME,
             VK_KHR_VIDEO_ENCODE_QUEUE_EXTENSION_NAME,
             VK_KHR_VIDEO_MAINTENANCE_1_EXTENSION_NAME,
             codecExtension,
         };
+
+#ifdef _WIN32
+        requiredExtensions.insert(requiredExtensions.begin(), {
+            VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,
+            VK_KHR_WIN32_KEYED_MUTEX_EXTENSION_NAME,
+        });
+#else
+        requiredExtensions.insert(requiredExtensions.begin(), {
+            VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
+            VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME,
+            VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME,
+        });
+#endif
 
         bool extensionsSupported = true;
         for (const char *extension : requiredExtensions) {
@@ -975,12 +1130,19 @@ auto VulkanEncoder::initEncoder(const char *encoder, int width, int height) -> s
     return {};
 }
 
-auto VulkanEncoder::encodeDmaBufFrame(int dma_fd, int width, int height, int stride, uint64_t modifier) -> bool {
-    if (!m_ready || !m_codecCtx || !m_hwFramesCtx) {
-        std::println(stderr, "encodeDmaBufFrame: encoder not ready");
-        return false;
+auto VulkanEncoder::encodeImportedImage(ImportedImage *imported, int width, int height, const void *submitPNext, bool *submitted) -> bool {
+    if (submitted) {
+        *submitted = false;
     }
 
+    if (!m_ready || !m_codecCtx || !m_hwFramesCtx) {
+        std::println(stderr, "encodeImportedImage: encoder not ready");
+        return false;
+    }
+    if (!imported || imported->image == VK_NULL_HANDLE || imported->view == VK_NULL_HANDLE) {
+        std::println(stderr, "encodeImportedImage: invalid imported image");
+        return false;
+    }
     if (width != m_width || height != m_height) {
         std::println(stderr, "Vulkan encoder resolution change is not supported without reinitialization");
         return false;
@@ -989,14 +1151,9 @@ auto VulkanEncoder::encodeDmaBufFrame(int dma_fd, int width, int height, int str
     const int alignedWidth = (width + 15) & ~15;
     const int alignedHeight = (height + 15) & ~15;
 
-    ImportedImage *imported = lookupOrCreateImport(dma_fd, width, height, modifier);
-    if (!imported) {
-        return false;
-    }
-
     AVFrame *frame = av_frame_alloc();
     if (!frame) {
-        std::println(stderr, "encodeDmaBufFrame: av_frame_alloc failed");
+        std::println(stderr, "encodeImportedImage: av_frame_alloc failed");
         return false;
     }
 
@@ -1004,20 +1161,14 @@ auto VulkanEncoder::encodeDmaBufFrame(int dma_fd, int width, int height, int str
     if (ret < 0) {
         char err[AV_ERROR_MAX_STRING_SIZE];
         av_strerror(ret, err, sizeof(err));
-        std::println(stderr, "encodeDmaBufFrame: av_hwframe_get_buffer failed: {}", err);
+        std::println(stderr, "encodeImportedImage: av_hwframe_get_buffer failed: {}", err);
         av_frame_free(&frame);
         return false;
     }
 
     auto *outputVkFrame = reinterpret_cast<AVVkFrame *>(frame->data[0]);
-    if (!outputVkFrame) {
-        std::println(stderr, "encodeDmaBufFrame: frame->data[0] is null");
-        av_frame_free(&frame);
-        return false;
-    }
-    if (outputVkFrame->img[0] == VK_NULL_HANDLE) {
-        std::println(stderr, "encodeDmaBufFrame: output VkImage missing (img[0]={})",
-                     (void *)outputVkFrame->img[0]);
+    if (!outputVkFrame || outputVkFrame->img[0] == VK_NULL_HANDLE) {
+        std::println(stderr, "encodeImportedImage: output VkImage missing");
         av_frame_free(&frame);
         return false;
     }
@@ -1043,21 +1194,23 @@ auto VulkanEncoder::encodeDmaBufFrame(int dma_fd, int width, int height, int str
         writes[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
         writes[i].pImageInfo = &imageInfos[i];
     }
-
     vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
-    vkResetCommandBuffer(commandBuffer, 0);
+    if (vkResetCommandBuffer(commandBuffer, 0) != VK_SUCCESS) {
+        av_frame_free(&frame);
+        return false;
+    }
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
     if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
         av_frame_free(&frame);
         return false;
     }
 
-    transitionImage(commandBuffer, imported->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+    const VkImageLayout sourceLayout = imported->hasValidLayout ? imported->lastLayout : VK_IMAGE_LAYOUT_UNDEFINED;
+    transitionImage(commandBuffer, imported->image, VK_IMAGE_ASPECT_COLOR_BIT, sourceLayout, VK_IMAGE_LAYOUT_GENERAL);
     transitionImage(commandBuffer, planes.y, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
     transitionImage(commandBuffer, planes.uv, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
@@ -1076,9 +1229,9 @@ auto VulkanEncoder::encodeDmaBufFrame(int dma_fd, int width, int height, int str
     copyBarriers[0].dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
     copyBarriers[0].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
     copyBarriers[0].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    copyBarriers[0].image = planes.y;
     copyBarriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     copyBarriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    copyBarriers[0].image = planes.y;
     copyBarriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     copyBarriers[1] = copyBarriers[0];
     copyBarriers[1].image = planes.uv;
@@ -1097,9 +1250,9 @@ auto VulkanEncoder::encodeDmaBufFrame(int dma_fd, int width, int height, int str
     frameBarrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
     frameBarrier.oldLayout = outputVkFrame->layout[0];
     frameBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    frameBarrier.image = outputVkFrame->img[0];
     frameBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     frameBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    frameBarrier.image = outputVkFrame->img[0];
     frameBarrier.subresourceRange = {VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT, 0, 1, 0, 1};
 
     VkDependencyInfo frameDependency{};
@@ -1110,15 +1263,10 @@ auto VulkanEncoder::encodeDmaBufFrame(int dma_fd, int width, int height, int str
 
     VkImageCopy copyRegions[2]{};
     copyRegions[0].srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    copyRegions[0].srcOffset = {0, 0, 0};
     copyRegions[0].dstSubresource = {VK_IMAGE_ASPECT_PLANE_0_BIT, 0, 0, 1};
-    copyRegions[0].dstOffset = {0, 0, 0};
     copyRegions[0].extent = {static_cast<uint32_t>(alignedWidth), static_cast<uint32_t>(alignedHeight), 1};
-
     copyRegions[1].srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    copyRegions[1].srcOffset = {0, 0, 0};
     copyRegions[1].dstSubresource = {VK_IMAGE_ASPECT_PLANE_1_BIT, 0, 0, 1};
-    copyRegions[1].dstOffset = {0, 0, 0};
     copyRegions[1].extent = {static_cast<uint32_t>(alignedWidth / 2), static_cast<uint32_t>(alignedHeight / 2), 1};
 
     vkCmdCopyImage(commandBuffer, planes.y, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -1133,6 +1281,7 @@ auto VulkanEncoder::encodeDmaBufFrame(int dma_fd, int width, int height, int str
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.pNext = submitPNext;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
 
@@ -1140,27 +1289,26 @@ auto VulkanEncoder::encodeDmaBufFrame(int dma_fd, int width, int height, int str
         av_frame_free(&frame);
         return false;
     }
-
+    if (submitted) {
+        *submitted = true;
+    }
     vkQueueWaitIdle(m_computeQueue);
+
+    imported->lastLayout = VK_IMAGE_LAYOUT_GENERAL;
+    imported->hasValidLayout = true;
 
     outputVkFrame->layout[0] = VK_IMAGE_LAYOUT_GENERAL;
     outputVkFrame->access[0] = static_cast<VkAccessFlagBits>(0);
 
     frame->pts = m_frameCount++;
     ret = avcodec_send_frame(m_codecCtx, frame);
-
     if (ret < 0) {
         char err[AV_ERROR_MAX_STRING_SIZE];
         av_strerror(ret, err, sizeof(err));
-
-        std::println(stderr,
-            "avcodec_send_frame failed: {}",
-            err);
-
+        std::println(stderr, "avcodec_send_frame failed: {}", err);
         av_frame_free(&frame);
         return false;
     }
-
     av_frame_free(&frame);
 
     while (true) {
@@ -1171,10 +1319,50 @@ auto VulkanEncoder::encodeDmaBufFrame(int dma_fd, int width, int height, int str
         if (ret < 0) {
             return false;
         }
-
         sendPacket(m_packet);
         av_packet_unref(m_packet);
     }
 
     return true;
 }
+
+#ifndef _WIN32
+auto VulkanEncoder::encodeDmaBufFrame(int dma_fd, int width, int height, int stride, uint64_t modifier) -> bool {
+    (void)stride;
+    ImportedImage *imported = lookupOrCreateImport(static_cast<uintptr_t>(dma_fd), width, height, modifier);
+    return encodeImportedImage(imported, width, height, nullptr, nullptr);
+}
+#endif
+
+#ifdef _WIN32
+auto VulkanEncoder::encodeWin32SharedTexture(HANDLE sharedHandle, int width, int height, bool *submitted) -> bool {
+    if (submitted) {
+        *submitted = false;
+    }
+
+    if (!sharedHandle) {
+        return false;
+    }
+
+    ImportedImage *imported = lookupOrCreateImport(reinterpret_cast<uintptr_t>(sharedHandle), width, height, 0);
+    if (!imported) {
+        return false;
+    }
+
+    const uint64_t acquireKey = 1;
+    const uint64_t releaseKey = 0;
+    const uint32_t acquireTimeout = 1000;
+
+    VkWin32KeyedMutexAcquireReleaseInfoKHR keyedMutex{};
+    keyedMutex.sType = VK_STRUCTURE_TYPE_WIN32_KEYED_MUTEX_ACQUIRE_RELEASE_INFO_KHR;
+    keyedMutex.acquireCount = 1;
+    keyedMutex.pAcquireSyncs = &imported->memory;
+    keyedMutex.pAcquireKeys = &acquireKey;
+    keyedMutex.pAcquireTimeouts = &acquireTimeout;
+    keyedMutex.releaseCount = 1;
+    keyedMutex.pReleaseSyncs = &imported->memory;
+    keyedMutex.pReleaseKeys = &releaseKey;
+
+    return encodeImportedImage(imported, width, height, &keyedMutex, submitted);
+}
+#endif
