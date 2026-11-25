@@ -1,6 +1,8 @@
 #include "encoder.hpp"
 #ifndef _WIN32
 #include "encoder_vulkan.hpp"
+#else
+#include "encoder_d3d12va.hpp"
 #endif
 
 std::unique_ptr<Encoder> CreateEncoder(Backend backend) {
@@ -10,7 +12,11 @@ std::unique_ptr<Encoder> CreateEncoder(Backend backend) {
         return std::make_unique<VulkanEncoder>();
 #endif
     case Backend::D3D12:
+#ifdef _WIN32
+        return std::make_unique<D3D12VAEncoder>();
+#else
         return nullptr;
+#endif
     }
 
     return nullptr;

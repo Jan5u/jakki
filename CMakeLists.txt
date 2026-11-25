@@ -77,6 +77,8 @@ if(WIN32)
         src/video/capture/capture_windows.cpp
         src/video/encode/encoder_vulkan.hpp
         src/video/encode/encoder_vulkan.cpp
+        src/video/encode/encoder_d3d12va.hpp
+        src/video/encode/encoder_d3d12va.cpp
         ui/jakki.rc
     )
 else()
@@ -316,6 +318,8 @@ target_link_libraries(jakki PRIVATE
 
 if(WIN32)
     if(MINGW)
+        target_compile_options(jakki PRIVATE -fno-strict-aliasing)
+
         target_link_libraries(jakki PRIVATE
             ssl
             crypto
@@ -323,8 +327,14 @@ if(WIN32)
             stdc++exp
             Vulkan::Loader
             d3d11
+            d3d12
+            d3dcompiler
             dxgi
             dxguid
+            runtimeobject
+            ole32
+            uuid
+            coremessaging
             user32
         )
     else()
@@ -334,7 +344,13 @@ if(WIN32)
             libzstd_static
             Vulkan::Loader
             d3d11
+            d3d12
+            d3dcompiler
             dxgi
+            runtimeobject
+            ole32
+            uuid
+            coremessaging
             user32
         )
     endif()
@@ -423,9 +439,39 @@ if(WIN32)
     )
 
     if(MINGW)
+        execute_process(
+            COMMAND "${CMAKE_CXX_COMPILER}" -dumpmachine
+            OUTPUT_VARIABLE MINGW_TARGET_TRIPLE
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        get_filename_component(MINGW_COMPILER_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        set(MINGW_RUNTIME_DLL_HINTS
+            "${MINGW_COMPILER_DIR}"
+            "/usr/${MINGW_TARGET_TRIPLE}/bin"
+            "$ENV{MINGW_PREFIX}/bin"
+        )
+        find_file(MINGW_WINPTHREAD_DLL
+            NAMES libwinpthread-1.dll
+            HINTS ${MINGW_RUNTIME_DLL_HINTS}
+            NO_CMAKE_FIND_ROOT_PATH
+            REQUIRED
+        )
+        find_file(MINGW_SSP_DLL
+            NAMES libssp-0.dll
+            HINTS ${MINGW_RUNTIME_DLL_HINTS}
+            NO_CMAKE_FIND_ROOT_PATH
+            REQUIRED
+        )
+        install(FILES
+            "${MINGW_WINPTHREAD_DLL}"
+            "${MINGW_SSP_DLL}"
+            DESTINATION ${CMAKE_INSTALL_BINDIR}
+        )
+
         target_link_options(jakki PRIVATE
             -static-libstdc++
             -static-libgcc
+            -Wl,-u,__cxa_pure_virtual
         )
     endif()
 
@@ -448,7 +494,7 @@ set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 
 if(WIN32)
     set(CPACK_GENERATOR "NSIS")
-    set(CPACK_STRIP_FILES OFF)
+    set(CPACK_STRIP_FILES ON)
     set(CPACK_PACKAGE_INSTALL_DIRECTORY "Jakki")
     set(CPACK_NSIS_MUI_ICON "${CMAKE_CURRENT_SOURCE_DIR}/ui/images/icon.ico")
     set(CPACK_NSIS_MUI_UNIICON "${CMAKE_CURRENT_SOURCE_DIR}/ui/images/icon.ico")

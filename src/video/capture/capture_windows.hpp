@@ -19,6 +19,16 @@
 #include <thread>
 
 class Network;
+class D3D12VAEncoder;
+
+enum class WindowsVersion {
+    Unsupported,
+    Windows10,
+    Windows11,
+};
+
+WindowsVersion getWindowsVersion();
+bool isWindows11();
 
 class DxgiCapture : public Capture {
   public:
@@ -31,6 +41,8 @@ class DxgiCapture : public Capture {
     void stopCapture() override;
 
   private:
+    struct WgcContext;
+
     bool initD3D11();
     bool initDuplication();
     void releaseDuplication();
@@ -38,6 +50,8 @@ class DxgiCapture : public Capture {
     bool ensureSharedTexture(const D3D11_TEXTURE2D_DESC &desktopDesc);
     bool ensureEncoder(int width, int height);
     void captureLoop(std::stop_token stopToken);
+    void dxgiCaptureLoop(std::stop_token stopToken);
+    void wgcCaptureLoop(std::stop_token stopToken);
 
     Network *net = nullptr;
     std::jthread m_capture_thread;
@@ -61,4 +75,6 @@ class DxgiCapture : public Capture {
     bool m_hasAdapterLuid = false;
 
     std::unique_ptr<VulkanEncoder> encoder;
+    std::unique_ptr<D3D12VAEncoder> d3d12Encoder;
+    std::unique_ptr<WgcContext> wgcContext;
 };
